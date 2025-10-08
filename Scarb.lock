@@ -112,4 +112,18 @@ name = "sessions_smart_contract"
 version = "0.1.0"
 dependencies = [
  "openzeppelin",
+ "snforge_std_deprecated",
+]
+
+[[package]]
+name = "snforge_scarb_plugin_deprecated"
+version = "0.50.0"
+source = "git+https://github.com/foundry-rs/starknet-foundry.git?tag=v0.50.0#bf0ade0de89c51c80dcc376b7c0a6d3e7aded962"
+
+[[package]]
+name = "snforge_std_deprecated"
+version = "0.50.0"
+source = "git+https://github.com/foundry-rs/starknet-foundry.git?tag=v0.50.0#bf0ade0de89c51c80dcc376b7c0a6d3e7aded962"
+dependencies = [
+ "snforge_scarb_plugin_deprecated",
 ]

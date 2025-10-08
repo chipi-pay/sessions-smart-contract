@@ -6,12 +6,13 @@ edition = "2024_07"
 [dependencies]
 starknet = ">=2.8.0"
 openzeppelin = { git = "https://github.com/OpenZeppelin/cairo-contracts.git", tag = "v2.0.0" }
+snforge_std_deprecated = { git = "https://github.com/foundry-rs/starknet-foundry.git", tag = "v0.50.0" }
 
 [[target.starknet-contract]]
 sierra = true
 casm = true
 
 [scripts]
-test = "scarb test"
+test = "snforge test"
 build = "scarb build"
 

@@ -1,0 +1,51 @@
+# Scarb build artifacts
+target/
+*.lock
+
+# Starknet artifacts
+*.sierra.json
+*.casm.json
+*.compiled_contract_class.json
+*.contract_class.json
+*.starknet_artifacts.json
+
+# Cairo cache
+.snfoundry_cache/
+.cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+*.pem
+*.key
+
+# Logs
+*.log
+
+# Deployment results (keep these local)
+deployment-result.txt
+deploy-web/
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+venv/
+ENV/
+
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
