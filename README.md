@@ -5,16 +5,25 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 ## 🚀 Deployed Contract
 
 **Starknet Mainnet:**
-- **Class Hash**: `0x04099c25cee8e5b5b05996670e1e45c886a8cafa96a58565547b6eb25580d135`
-- **Reference Implementation**: `0x028a75c6803a7899a9c68c9a47f44ca51af79490741c6065b341309515716e7f`
+- **Class Hash**: `0x023dc5d0d4f581c98d2e30e8a7317432e180e9f8b090e775339e3462c3de2949`
+- **Reference Implementation**: `0x01b0b06255f6960219dc358114779fda563c3b817d2df3fbd214e67c3572fd7f`
 - **Network**: Starknet Mainnet
 - **Compiler**: Cairo 2.11.4
+- **Deployed**: October 8, 2025
 
 > ⚠️ **Note**: The reference implementation is provided as an example. For production use, deploy your own instance with your owner's public key.
 
+### What's New in This Version
+
+✨ **Predictable Session Signatures** - Fixed the chicken-and-egg problem! Session signatures now use only values known *before* transaction submission:
+- Uses `account_address`, `chain_id`, `nonce`, `valid_until`, and call data
+- **No longer requires `transaction_hash`** (which was unknown pre-submission)
+- Enables true off-chain signature generation
+- Maintains full security with replay protection via nonce
+
 ### Verify on Starkscan
-- [View Class](https://starkscan.co/class/0x04099c25cee8e5b5b05996670e1e45c886a8cafa96a58565547b6eb25580d135)
-- [View Reference Contract](https://starkscan.co/contract/0x028a75c6803a7899a9c68c9a47f44ca51af79490741c6065b341309515716e7f)
+- [View Class](https://starkscan.co/class/0x023dc5d0d4f581c98d2e30e8a7317432e180e9f8b090e775339e3462c3de2949)
+- [View Reference Contract](https://starkscan.co/contract/0x01b0b06255f6960219dc358114779fda563c3b817d2df3fbd214e67c3572fd7f)
 
 ---
 
@@ -96,6 +105,37 @@ SessionAccount (extends OpenZeppelin AccountComponent)
 - `session_pubkey`: Public key of the temporary session
 - `r, s`: ECDSA signature components (signed by session private key)
 - `valid_until`: Expiration timestamp (must match stored session)
+
+### Session Message Hash Algorithm
+
+The session signature is computed over a hash of **predictable, off-chain-computable values only**:
+
+```cairo
+fn _session_message_hash(
+    calls: Span<Call>,
+    valid_until: u64
+) -> felt252 {
+    let hash_data = [
+        get_contract_address(),     // Account address (binding)
+        tx_info.chain_id,           // Network identifier
+        tx_info.nonce,              // Replay protection
+        valid_until,                // Expiration
+        // For each call:
+        call.to,                    // Target contract
+        call.selector,              // Function selector
+        ...call.calldata            // All arguments (flattened)
+    ];
+    
+    poseidon_hash_span(hash_data)
+}
+```
+
+**Key Properties:**
+- ✅ **No transaction_hash** - All values known before submission
+- ✅ **Nonce prevents replay** - Each signature is single-use
+- ✅ **Account binding** - Can't be used on different accounts
+- ✅ **Chain binding** - Can't be replayed on other networks
+- ✅ **Complete integrity** - Covers all call parameters
 
 ### Validation Flow
 
@@ -190,11 +230,25 @@ account.add_or_update_session_key(
 # Off-chain: Sign with session private key
 from starknet_py.net.account.account import Account
 from starknet_py.hash.selector import get_selector_from_name
+from starknet_py.hash.hash_method import poseidon_hash_many
 
-# Build the message hash (includes call data + valid_until)
-message_hash = compute_session_message_hash(
-    calls, valid_until, tx_hash, chain_id
-)
+# Fetch current nonce (predictable value)
+nonce = await account.get_nonce()
+
+# Build the message hash with predictable values ONLY
+# This can be computed BEFORE sending the transaction
+hash_data = [
+    account_address,          # Account contract address
+    chain_id,                 # Network chain ID
+    nonce,                    # Current nonce (fetch from account)
+    valid_until,              # Session expiration timestamp
+    # Flatten all call data
+    call.to,                  # Target contract
+    call.selector,            # Function selector
+    *call.calldata            # Function arguments
+]
+
+message_hash = poseidon_hash_many(hash_data)
 
 # Sign with session private key
 r, s = sign_message(message_hash, session_private_key)
@@ -209,7 +263,8 @@ await account.execute(
         selector=get_selector_from_name("transfer"),
         calldata=[recipient, amount_low, amount_high]
     )],
-    signature=signature
+    signature=signature,
+    nonce=nonce  # Use the same nonce we hashed
 )
 ```
 
@@ -309,8 +364,10 @@ Tests: 13 passed, 0 failed, 0 ignored, 0 filtered out
 
 3. **Cryptographic Integrity**
    - ECDSA signature verification on Stark curve
-   - Message hash includes transaction hash, chain ID, and call data
-   - Prevents replay attacks across chains and transactions
+   - Message hash includes: account address, chain ID, nonce, valid_until, and full call data
+   - **Nonce-based replay protection**: Each signature is single-use (tied to account nonce)
+   - **Predictable pre-signing**: All hash components known before transaction submission
+   - Prevents replay attacks across accounts, chains, and transactions
 
 4. **Time-Based Security**
    - Sessions have mandatory expiration timestamps

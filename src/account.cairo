@@ -33,6 +33,7 @@ mod Account {
     use starknet::storage::{Map, StorageMapReadAccess, StorageMapWriteAccess};
     use starknet::account::Call;
     use starknet::get_tx_info;
+    use starknet::get_contract_address;
     use core::ecdsa::check_ecdsa_signature;
     use core::poseidon::poseidon_hash_span;
     use core::array::ArrayTrait;
@@ -324,6 +325,7 @@ mod Account {
         }
 
         /// Compute message hash for session signature
+        /// Uses only predictable, off-chain-computable values to avoid chicken-and-egg problem
         fn _session_message_hash(
             self: @ContractState,
             calls: Span<Call>,
@@ -332,12 +334,13 @@ mod Account {
             let tx_info = get_tx_info().unbox();
             let mut hash_data = array![];
             
-            // Add transaction info
-            hash_data.append(tx_info.transaction_hash);
-            hash_data.append(tx_info.chain_id.into());
-            hash_data.append(valid_until.into());
+            // Deterministic context - all values known before tx submission
+            hash_data.append(get_contract_address().into());  // bind to this account
+            hash_data.append(tx_info.chain_id.into());        // prevent cross-chain replay
+            hash_data.append(tx_info.nonce);                  // prevent replay attacks
+            hash_data.append(valid_until.into());             // expiration
             
-            // Hash each call
+            // Flatten all call targets + calldata
             let mut i = 0;
             loop {
                 if i >= calls.len() {
@@ -347,7 +350,6 @@ mod Account {
                 hash_data.append((*call.to).into());
                 hash_data.append(*call.selector);
                 
-                // Hash calldata
                 let mut j = 0;
                 loop {
                     if j >= call.calldata.len() {
