@@ -2,6 +2,22 @@
 
 A Cairo smart contract that extends OpenZeppelin's account standard with session key functionality, enabling temporary, restricted access delegation on Starknet.
 
+## 🚀 Deployed Contract
+
+**Starknet Mainnet:**
+- **Class Hash**: `0x04099c25cee8e5b5b05996670e1e45c886a8cafa96a58565547b6eb25580d135`
+- **Reference Implementation**: `0x028a75c6803a7899a9c68c9a47f44ca51af79490741c6065b341309515716e7f`
+- **Network**: Starknet Mainnet
+- **Compiler**: Cairo 2.11.4
+
+> ⚠️ **Note**: The reference implementation is provided as an example. For production use, deploy your own instance with your owner's public key.
+
+### Verify on Starkscan
+- [View Class](https://starkscan.co/class/0x04099c25cee8e5b5b05996670e1e45c886a8cafa96a58565547b6eb25580d135)
+- [View Reference Contract](https://starkscan.co/contract/0x028a75c6803a7899a9c68c9a47f44ca51af79490741c6065b341309515716e7f)
+
+---
+
 ## 📜 License
 
 MIT License
