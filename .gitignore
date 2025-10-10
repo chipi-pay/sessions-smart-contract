@@ -30,6 +30,9 @@ Thumbs.db
 *.pem
 *.key
 
+# Temporary deployment files
+.starkli-*
+
 # Logs
 *.log
 

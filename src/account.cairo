@@ -33,7 +33,6 @@ mod Account {
     use starknet::storage::{Map, StorageMapReadAccess, StorageMapWriteAccess};
     use starknet::account::Call;
     use starknet::get_tx_info;
-    use starknet::get_contract_address;
     use core::ecdsa::check_ecdsa_signature;
     use core::poseidon::poseidon_hash_span;
     use core::array::ArrayTrait;
@@ -168,6 +167,63 @@ mod Account {
             // Only the account itself can execute
             self.account.assert_only_self();
             self._execute_calls(calls)
+        }
+
+        #[external(v0)]
+        fn __validate_deploy__(
+            self: @ContractState,
+            class_hash: felt252,
+            contract_address_salt: felt252,
+            public_key: felt252
+        ) -> felt252 {
+            // For deployment, only owner signature is allowed (standard 2-element ECDSA)
+            let tx_info = get_tx_info().unbox();
+            let signature = tx_info.signature;
+            
+            if signature.len() != 2 {
+                return 0;
+            }
+            
+            // Validate against the public_key being deployed (constructor arg)
+            let tx_hash = tx_info.transaction_hash;
+            let is_valid = check_ecdsa_signature(
+                tx_hash,
+                public_key,
+                *signature.at(0),
+                *signature.at(1)
+            );
+            
+            if is_valid {
+                starknet::VALIDATED
+            } else {
+                0
+            }
+        }
+
+        #[external(v0)]
+        fn __validate_declare__(self: @ContractState, class_hash: felt252) -> felt252 {
+            // For declaration, use the account's public key
+            let tx_info = get_tx_info().unbox();
+            let signature = tx_info.signature;
+            
+            if signature.len() != 2 {
+                return 0;
+            }
+            
+            let public_key = self.account.get_public_key();
+            let tx_hash = tx_info.transaction_hash;
+            let is_valid = check_ecdsa_signature(
+                tx_hash,
+                public_key,
+                *signature.at(0),
+                *signature.at(1)
+            );
+            
+            if is_valid {
+                starknet::VALIDATED
+            } else {
+                0
+            }
         }
 
         fn is_valid_signature(
@@ -325,7 +381,6 @@ mod Account {
         }
 
         /// Compute message hash for session signature
-        /// Uses only predictable, off-chain-computable values to avoid chicken-and-egg problem
         fn _session_message_hash(
             self: @ContractState,
             calls: Span<Call>,
@@ -334,13 +389,12 @@ mod Account {
             let tx_info = get_tx_info().unbox();
             let mut hash_data = array![];
             
-            // Deterministic context - all values known before tx submission
-            hash_data.append(get_contract_address().into());  // bind to this account
-            hash_data.append(tx_info.chain_id.into());        // prevent cross-chain replay
-            hash_data.append(tx_info.nonce);                  // prevent replay attacks
-            hash_data.append(valid_until.into());             // expiration
+            // Add transaction info
+            hash_data.append(tx_info.transaction_hash);
+            hash_data.append(tx_info.chain_id.into());
+            hash_data.append(valid_until.into());
             
-            // Flatten all call targets + calldata
+            // Hash each call
             let mut i = 0;
             loop {
                 if i >= calls.len() {
@@ -350,6 +404,7 @@ mod Account {
                 hash_data.append((*call.to).into());
                 hash_data.append(*call.selector);
                 
+                // Hash calldata
                 let mut j = 0;
                 loop {
                     if j >= call.calldata.len() {
