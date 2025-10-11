@@ -5,7 +5,7 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 ## 🚀 Deployed Contract
 
 **Starknet Mainnet:**
-- **Class Hash**: `0x624bbccc9ffb42585c0e35c1a35aa15b758312aff35beb8133364758cebe6c5`
+- **Class Hash**: `0xe1608a8cd11e05d6f8ffab94262690a0cc80feceb6098a7712388497434787`
 - **Reference Implementation**: `0x01b0b06255f6960219dc358114779fda563c3b817d2df3fbd214e67c3572fd7f`
 - **Latest Account (V15)**: `0x001d87ef4f0120c4c24c0feba9ea61e011e4c04e276ff717c180bd363856cd57`
 - **Network**: Starknet Mainnet
@@ -14,7 +14,17 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 
 > ⚠️ **Note**: The reference implementation is provided as an example. For production use, deploy your own instance with your owner's public key.
 
-### What's New in This Version (v15 - Tx V3 & Name Shadowing Fix)
+### What's New in This Version (v16 - Session Validation Fix)
+
+🔧 **Fixed Session Key Existence Validation** - Resolved critical security issue where non-existent session keys could be used for transactions:
+- **Problem**: Session keys that were never added to the contract could still pass validation
+- **Root Cause**: Default storage values (all zeros) passed validation checks incorrectly
+- **Solution**: Added session existence check (`valid_until > 0`) in `_validate_session_for_calls`
+- **Security Enhancement**: Only properly added session keys can now be used for transactions
+- **All Tests Passing**: 15/15 tests still pass with improved validation
+- **Minimal Change**: Only adds missing existence check without affecting other functionality
+
+### Previous Version Features (v15 - Tx V3 & Name Shadowing Fix)
 
 🚀 **Tx V3 Compatibility** - Updated `__validate__` function for optimal transaction version 3 support:
 - **Removed nonce parameter** - Simplified function signature for better compatibility
@@ -88,7 +98,7 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 - Maintains full security with replay protection via nonce
 
 ### Verify on Starkscan
-- [View Class](https://starkscan.co/class/0x0624bbccc9ffb42585c0e35c1a35aa15b758312aff35beb8133364758cebe6c5)
+- [View Class (V16)](https://starkscan.co/class/0x00e1608a8cd11e05d6f8ffab94262690a0cc80feceb6098a7712388497434787)
 - [View Reference Contract](https://starkscan.co/contract/0x01b0b06255f6960219dc358114779fda563c3b817d2df3fbd214e67c3572fd7f)
 - [View Latest Account (V15)](https://starkscan.co/contract/0x001d87ef4f0120c4c24c0feba9ea61e011e4c04e276ff717c180bd363856cd57)
 

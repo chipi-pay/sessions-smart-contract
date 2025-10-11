@@ -287,6 +287,11 @@ mod Account {
         ) -> bool {
             let mut session = self.session_keys.read(session_key);
             
+            // Check if session exists (valid_until > 0 means session was added)
+            if session.valid_until == 0 {
+                return false;
+            }
+            
             // Check if session is expired
             if get_block_timestamp() > session.valid_until {
                 return false;

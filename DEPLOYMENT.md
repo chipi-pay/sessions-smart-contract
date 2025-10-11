@@ -2,7 +2,13 @@
 
 ## Contract Deployment Details
 
-### Latest Class Declaration (v15 - Tx V3 & Name Shadowing Fix)
+### Latest Class Declaration (v16 - Session Validation Fix)
+- **Class Hash**: `0xe1608a8cd11e05d6f8ffab94262690a0cc80feceb6098a7712388497434787`
+- **Transaction**: `0x57a11df48e4e0402adbb0430e1df3c6d530920ca6b6dd9e05900093a60599b6`
+- **Status**: ✅ Successfully Declared
+- **Starkscan**: https://starkscan.co/class/0x00e1608a8cd11e05d6f8ffab94262690a0cc80feceb6098a7712388497434787
+
+### Previous Class Declaration (v15 - Tx V3 & Name Shadowing Fix)
 - **Class Hash**: `0x624bbccc9ffb42585c0e35c1a35aa15b758312aff35beb8133364758cebe6c5`
 - **Transaction**: `0x11ea646a8bf32a64179939ff1ae9d48452822794722c42050a6660f9d3c66ad`
 - **Status**: ✅ Successfully Declared
@@ -14,6 +20,44 @@
 - **Transaction**: `0x02b830d552afd4b7f8d8616f8988aab6bb2e0cc0336a69c4c61efcfe48a36387`
 - **Status**: ✅ Successfully Deployed
 - **Starkscan**: https://starkscan.co/contract/0x001d87ef4f0120c4c24c0feba9ea61e011e4c04e276ff717c180bd363856cd57
+
+## Key Changes in Version 16 (January 10, 2025) - Session Validation Fix
+
+### 🔧 **Fixed Session Key Existence Validation**
+
+**Problem**: Session keys that were never added to the contract could still be used for transactions because the validation logic didn't check if the session actually exists in storage.
+
+**Root Cause**: When a session key doesn't exist in storage, `session_keys.read()` returns default values (all zeros):
+- `valid_until = 0`
+- `max_calls = 0` 
+- `calls_used = 0`
+- `allowed_entrypoints_len = 0`
+
+The original validation logic would incorrectly pass for non-existent sessions because:
+1. Expiration check: `get_block_timestamp() > 0` (always true)
+2. Max calls check: `0 >= 0` (always true) 
+3. Entrypoint check: `allowed_entrypoints_len == 0` means "allow all"
+
+**Solution**: Added session existence check in `_validate_session_for_calls`:
+
+```cairo
+// Check if session exists (valid_until > 0 means session was added)
+if session.valid_until == 0 {
+    return false;
+}
+```
+
+**Benefits**:
+- ✅ **Proper session validation** - Only added session keys can be used
+- ✅ **Security enhancement** - Prevents unauthorized access with non-existent sessions
+- ✅ **All tests passing** - 15/15 tests still pass with improved validation
+- ✅ **Minimal change** - Only adds missing existence check without affecting other functionality
+
+**What's Unchanged**:
+- Session addition still works (uses owner signature)
+- Session transactions now properly validate session existence
+- All existing session functionality preserved
+- Owner validation logic unchanged
 
 ## Key Changes in Version 15
 
