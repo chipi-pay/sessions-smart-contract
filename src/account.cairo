@@ -214,11 +214,14 @@ mod Account {
         ) {
             self.account.assert_only_self();
             
+            // Use the actual length of the allowed_entrypoints array
+            let actual_len = allowed_entrypoints.len();
+            
             let sess = SessionData {
                 valid_until,
                 max_calls,
                 calls_used: 0,
-                allowed_entrypoints_len: allowed_entrypoints.len(),
+                allowed_entrypoints_len: actual_len,
             };
             self.session_keys.write(session_key, sess);
             

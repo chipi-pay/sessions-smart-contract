@@ -6,7 +6,7 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 
 **Starknet Mainnet:**
 - **Class Hash**: `0x64bbc6bb2bc4bad3a1ce8fde7122ad8d06f928daf56ca64a2849ff438eabc82`
-- **Contract Address**: `0x0398f78a78932e2fa56878594b8fdf7726134e20cb1c4406804f1697d301ac61`
+- **Contract Address**: `0x036fd978435ae17403118aa0927448449dabe03298d6eb79b7303d182bc7ff8f`
 - **Reference Implementation**: `0x01b0b06255f6960219dc358114779fda563c3b817d2df3fbd214e67c3572fd7f`
 - **Latest Account (V15)**: `0x001d87ef4f0120c4c24c0feba9ea61e011e4c04e276ff717c180bd363856cd57`
 - **Network**: Starknet Mainnet
@@ -120,7 +120,7 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 
 ### Verify on Starkscan
 - [View Class (V18)](https://starkscan.co/class/0x064bbc6bb2bc4bad3a1ce8fde7122ad8d06f928daf56ca64a2849ff438eabc82)
-- [View Contract (V18)](https://starkscan.co/contract/0x0398f78a78932e2fa56878594b8fdf7726134e20cb1c4406804f1697d301ac61)
+- [View Contract (V18)](https://starkscan.co/contract/0x036fd978435ae17403118aa0927448449dabe03298d6eb79b7303d182bc7ff8f)
 - [View Reference Contract](https://starkscan.co/contract/0x01b0b06255f6960219dc358114779fda563c3b817d2df3fbd214e67c3572fd7f)
 - [View Latest Account (V15)](https://starkscan.co/contract/0x001d87ef4f0120c4c24c0feba9ea61e011e4c04e276ff717c180bd363856cd57)
 

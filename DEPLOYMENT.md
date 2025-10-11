@@ -9,10 +9,10 @@
 - **Starkscan**: https://starkscan.co/class/0x064bbc6bb2bc4bad3a1ce8fde7122ad8d06f928daf56ca64a2849ff438eabc82
 
 ### Latest Contract Deployment (v18 - Entrypoint Cleanup Fix)
-- **Contract Address**: `0x0398f78a78932e2fa56878594b8fdf7726134e20cb1c4406804f1697d301ac61`
-- **Transaction**: `0x0358d2cdb47b9f5f820dcfa0b847de1db6f4b63e108a2754262f30b7d58ff2e6`
+- **Contract Address**: `0x036fd978435ae17403118aa0927448449dabe03298d6eb79b7303d182bc7ff8f`
+- **Transaction**: `0x041e0a0b4bc0aae25a37bf82e1f025ee3b726b02f037af2111674bf8d4fc036c`
 - **Status**: ✅ Successfully Deployed
-- **Starkscan**: https://starkscan.co/contract/0x0398f78a78932e2fa56878594b8fdf7726134e20cb1c4406804f1697d301ac61
+- **Starkscan**: https://starkscan.co/contract/0x036fd978435ae17403118aa0927448449dabe03298d6eb79b7303d182bc7ff8f
 
 ### Previous Class Declaration (v17 - Security Hardening Fix)
 - **Class Hash**: `0x109136967222a049be210ca4cc8dc0ba255bae5d41e5220ca8711cf2af2dc68`
