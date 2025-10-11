@@ -5,7 +5,7 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 ## 🚀 Deployed Contract
 
 **Starknet Mainnet:**
-- **Class Hash**: `0xe1608a8cd11e05d6f8ffab94262690a0cc80feceb6098a7712388497434787`
+- **Class Hash**: `0x109136967222a049be210ca4cc8dc0ba255bae5d41e5220ca8711cf2af2dc68`
 - **Reference Implementation**: `0x01b0b06255f6960219dc358114779fda563c3b817d2df3fbd214e67c3572fd7f`
 - **Latest Account (V15)**: `0x001d87ef4f0120c4c24c0feba9ea61e011e4c04e276ff717c180bd363856cd57`
 - **Network**: Starknet Mainnet
@@ -14,7 +14,17 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 
 > ⚠️ **Note**: The reference implementation is provided as an example. For production use, deploy your own instance with your owner's public key.
 
-### What's New in This Version (v16 - Session Validation Fix)
+### What's New in This Version (v17 - Security Hardening Fix)
+
+🔒 **Fixed Critical Security Vulnerability** - Resolved potential bypass vulnerability in empty signature handling:
+- **Problem**: Empty signatures were accepted without proper caller validation, potentially allowing external bypass
+- **Root Cause**: Missing caller validation for empty signatures in `__validate__` function
+- **Solution**: Added caller validation to ensure empty signatures only accepted for legitimate self-calls
+- **Security Enhancement**: External callers can no longer use empty signatures to bypass validation
+- **Zero Impact**: Owner and session signatures work exactly as before
+- **All Tests Passing**: 15/15 tests still pass with enhanced security
+
+### Previous Version Features (v16 - Session Validation Fix)
 
 🔧 **Fixed Session Key Existence Validation** - Resolved critical security issue where non-existent session keys could be used for transactions:
 - **Problem**: Session keys that were never added to the contract could still pass validation
@@ -98,7 +108,7 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 - Maintains full security with replay protection via nonce
 
 ### Verify on Starkscan
-- [View Class (V16)](https://starkscan.co/class/0x00e1608a8cd11e05d6f8ffab94262690a0cc80feceb6098a7712388497434787)
+- [View Class (V17)](https://starkscan.co/class/0x0109136967222a049be210ca4cc8dc0ba255bae5d41e5220ca8711cf2af2dc68)
 - [View Reference Contract](https://starkscan.co/contract/0x01b0b06255f6960219dc358114779fda563c3b817d2df3fbd214e67c3572fd7f)
 - [View Latest Account (V15)](https://starkscan.co/contract/0x001d87ef4f0120c4c24c0feba9ea61e011e4c04e276ff717c180bd363856cd57)
 

@@ -34,6 +34,7 @@ mod Account {
     use starknet::account::Call;
     use starknet::get_tx_info;
     use starknet::get_contract_address;
+    use starknet::get_caller_address;
     use core::ecdsa::check_ecdsa_signature;
     use core::poseidon::poseidon_hash_span;
     use core::array::ArrayTrait;
@@ -106,10 +107,17 @@ mod Account {
         fn __validate__(ref self: ContractState, calls: Array<Call>) -> felt252 {
             let tx_info = get_tx_info().unbox();
             let signature = tx_info.signature;
+            let caller = get_caller_address();
 
             // Self-calls routed via __execute__ carry no tx signature
+            // SECURITY: Only allow empty signatures if caller is the account itself
             if signature.len() == 0 {
-                return starknet::VALIDATED;
+                if caller == get_contract_address() {
+                    return starknet::VALIDATED;
+                } else {
+                    // Reject empty signatures from external callers
+                    return 0;
+                }
             }
 
             // Owner path: 2-elt signature → delegate to OZ (handles tx v3 hashing)

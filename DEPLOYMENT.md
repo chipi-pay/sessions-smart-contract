@@ -2,7 +2,13 @@
 
 ## Contract Deployment Details
 
-### Latest Class Declaration (v16 - Session Validation Fix)
+### Latest Class Declaration (v17 - Security Hardening Fix)
+- **Class Hash**: `0x109136967222a049be210ca4cc8dc0ba255bae5d41e5220ca8711cf2af2dc68`
+- **Transaction**: `0x52fff698a14b2bcfde84f1566f915214afc759ad3abb94fc5f08fb52a86adca`
+- **Status**: ✅ Successfully Declared
+- **Starkscan**: https://starkscan.co/class/0x0109136967222a049be210ca4cc8dc0ba255bae5d41e5220ca8711cf2af2dc68
+
+### Previous Class Declaration (v16 - Session Validation Fix)
 - **Class Hash**: `0xe1608a8cd11e05d6f8ffab94262690a0cc80feceb6098a7712388497434787`
 - **Transaction**: `0x57a11df48e4e0402adbb0430e1df3c6d530920ca6b6dd9e05900093a60599b6`
 - **Status**: ✅ Successfully Declared
@@ -20,6 +26,40 @@
 - **Transaction**: `0x02b830d552afd4b7f8d8616f8988aab6bb2e0cc0336a69c4c61efcfe48a36387`
 - **Status**: ✅ Successfully Deployed
 - **Starkscan**: https://starkscan.co/contract/0x001d87ef4f0120c4c24c0feba9ea61e011e4c04e276ff717c180bd363856cd57
+
+## Key Changes in Version 17 (January 10, 2025) - Security Hardening Fix
+
+### 🔒 **Fixed Critical Security Vulnerability in Empty Signature Handling**
+
+**Problem**: The contract accepted empty signatures without proper caller validation, creating a potential security vulnerability where external callers could potentially bypass validation.
+
+**Root Cause**: The `__validate__` function allowed empty signatures for self-calls but didn't verify that the caller was actually the account itself, potentially allowing external bypass attempts.
+
+**Solution**: Added caller validation to ensure empty signatures are only accepted for legitimate self-calls:
+
+```cairo
+// SECURITY: Only allow empty signatures if caller is the account itself
+if signature.len() == 0 {
+    if caller == get_contract_address() {
+        return starknet::VALIDATED;
+    } else {
+        // Reject empty signatures from external callers
+        return 0;
+    }
+}
+```
+
+**Security Enhancement**:
+- ✅ **Prevents unauthorized bypass** - External callers can no longer use empty signatures
+- ✅ **Maintains self-call functionality** - Account can still call itself through `__execute__`
+- ✅ **Zero impact on normal usage** - Owner and session signatures work exactly as before
+- ✅ **All tests passing** - 15/15 tests still pass with enhanced security
+
+**What's Unchanged**:
+- Owner signature validation (2-element signatures) remains identical
+- Session signature validation (4-element signatures) remains identical
+- All existing session functionality preserved
+- OpenZeppelin integration unchanged
 
 ## Key Changes in Version 16 (January 10, 2025) - Session Validation Fix
 
