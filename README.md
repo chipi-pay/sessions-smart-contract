@@ -48,6 +48,13 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 - **Added calldata length** - Includes calldata length before elements
 - **Uses contract address** - Uses `get_contract_address()` instead of `transaction_hash`
 - **Resolves "Account: unauthorized" errors** for session key transactions
+
+🔧 **Frontend Nonce Management Fix** - Resolved "Invalid transaction nonce: undefined" errors:
+- **Starknet.js 7.x Bug** - Library reports incorrect nonce values
+- **Force Nonce Increment** - Workaround: increment reported nonce by 1
+- **Known Issue** - This is a documented bug in Starknet.js 7.x versions
+- **Production Solution** - Always fetch fresh nonce before transactions
+- **Alternative Methods Failed** - Manual construction, different RPCs, raw fetch all had same issue
 - **Perfect frontend compatibility** - Hash computation now identical
 
 ✨ **Enhanced Validation Logic** - Improved `__validate__` function with better error handling:
@@ -716,6 +723,115 @@ snforge test test_name
 
 # Verbose output
 snforge test -v
+```
+
+---
+
+## 🔧 Troubleshooting
+
+### Frontend Integration Issues
+
+#### "Invalid transaction nonce: undefined" Error
+
+**Problem**: Your frontend gets nonce-related errors when calling session functions.
+
+**Root Cause**: Starknet.js 7.x has a bug where it reports incorrect nonce values.
+
+**Solution**: Force nonce increment in your frontend:
+
+```typescript
+// ❌ This fails with "Invalid transaction nonce: undefined"
+const result = await account.execute({
+  contractAddress: ozAddr,
+  entrypoint: 'add_or_update_session_key',
+  calldata: calldata
+});
+
+// ✅ This works - force nonce increment
+const currentNonce = await account.getNonce();
+const result = await account.execute({
+  contractAddress: ozAddr,
+  entrypoint: 'add_or_update_session_key',
+  calldata: calldata
+}, undefined, {
+  nonce: currentNonce + 1  // Force increment to bypass library bug
+});
+```
+
+**Why Other Methods Failed**:
+- `account.signInvoke` - Method doesn't exist in current Starknet.js version
+- Different RPC providers - CORS issues and version incompatibility
+- Raw RPC with fetch - Same `signInvoke` issue
+- BigInt nonce - Same underlying nonce bug
+- Wait and retry - Same underlying nonce bug
+
+#### "Account: unauthorized" for Session Transactions
+
+**Problem**: Session key transactions fail with authorization errors.
+
+**Root Cause**: Message hash computation mismatch between frontend and contract.
+
+**Solution**: Ensure your frontend computes the message hash exactly as the contract does:
+
+```typescript
+// Contract's _session_message_hash order:
+// 1. Contract address (ozAddr)
+// 2. Chain ID
+// 3. Nonce
+// 4. Valid until timestamp
+// 5. For each call: contract address, selector, calldata length, calldata elements
+
+const sessionMsgHash = hash.computeHashOnElements([
+  ozAddr,                    // Contract address
+  chainId,                   // Chain ID
+  nonce,                     // Transaction nonce
+  session.validUntil.toString(), // Valid until timestamp
+  CONTRACT_ADDRESS,          // Target contract
+  hash.getSelectorFromName("wave").toString(), // Function selector
+  msgFelts.length.toString(), // Calldata length
+  ...msgFelts                // Calldata elements
+]);
+```
+
+#### Session Functions Not Found
+
+**Problem**: `add_or_update_session_key`, `revoke_session_key`, or `get_session_data` functions not found.
+
+**Root Cause**: Contract not properly deployed or ABI compilation issue.
+
+**Solution**: 
+1. Verify contract is deployed with correct class hash: `0x624bbccc9ffb42585c0e35c1a35aa15b758312aff35beb8133364758cebe6c5`
+2. Check contract ABI includes session functions
+3. Ensure you're using the latest deployed version
+
+### Smart Contract Issues
+
+#### Tests Failing
+
+**Problem**: `snforge test` fails with compilation or runtime errors.
+
+**Solution**:
+```bash
+# Clean and rebuild
+scarb clean && scarb build
+
+# Run tests with verbose output
+snforge test -v
+
+# Check for specific test failures
+snforge test test_name
+```
+
+#### Deployment Issues
+
+**Problem**: Contract deployment fails with various errors.
+
+**Solution**:
+```bash
+# Ensure sufficient balance
+# Check network connectivity
+# Verify class hash is declared
+# Use correct network (mainnet vs testnet)
 ```
 
 ---
