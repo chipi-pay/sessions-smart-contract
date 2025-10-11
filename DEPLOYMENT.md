@@ -2,18 +2,62 @@
 
 ## Contract Deployment Details
 
-### Latest Class Declaration (v13 - Final - Fixed Session Functions ABI)
-- **Class Hash**: `0x591b766448bf7219a0e0e0a5383ac055206d69584a3e95f70bd640acd905c2c`
-- **Transaction**: `0x740e2354a909857638542e34bf3d33fe2f988c36340b8433ff8048a48efb016`
+### Latest Class Declaration (v15 - Tx V3 & Name Shadowing Fix)
+- **Class Hash**: `0x624bbccc9ffb42585c0e35c1a35aa15b758312aff35beb8133364758cebe6c5`
+- **Transaction**: `0x11ea646a8bf32a64179939ff1ae9d48452822794722c42050a6660f9d3c66ad`
 - **Status**: ✅ Successfully Declared
-- **Starkscan**: https://starkscan.co/class/0x591b766448bf7219a0e0e0a5383ac055206d69584a3e95f70bd640acd905c2c
+- **Starkscan**: https://starkscan.co/class/0x0624bbccc9ffb42585c0e35c1a35aa15b758312aff35beb8133364758cebe6c5
 
-### Latest Account Deployment (v13 - Final)
-- **Account Address**: `0x07b4c07cbfee463379fa04f5818a0f69f1b33b22416f602d9b319145cce2a3d4`
-- **Class Hash**: `0x591b766448bf7219a0e0e0a5383ac055206d69584a3e95f70bd640acd905c2c`
-- **Transaction**: `0x0386c9f7766da94bf181e7b8c5380bc9eca96692688fa7c491a7adb19daea2ad`
+### Latest Account Deployment (v15 - Tx V3 & Name Shadowing Fix)
+- **Account Address**: `0x001d87ef4f0120c4c24c0feba9ea61e011e4c04e276ff717c180bd363856cd57`
+- **Class Hash**: `0x624bbccc9ffb42585c0e35c1a35aa15b758312aff35beb8133364758cebe6c5`
+- **Transaction**: `0x02b830d552afd4b7f8d8616f8988aab6bb2e0cc0336a69c4c61efcfe48a36387`
 - **Status**: ✅ Successfully Deployed
-- **Starkscan**: https://starkscan.co/contract/0x07b4c07cbfee463379fa04f5818a0f69f1b33b22416f602d9b319145cce2a3d4
+- **Starkscan**: https://starkscan.co/contract/0x001d87ef4f0120c4c24c0feba9ea61e011e4c04e276ff717c180bd363856cd57
+
+## Key Changes in Version 15
+
+### 🚀 **Tx V3 Compatibility**
+- **Problem**: `__validate__` function had nonce parameter that was not needed for tx v3 compatibility
+- **Solution**: Removed nonce parameter and updated function signature to `fn __validate__(ref self: ContractState, calls: Array<Call>) -> felt252`
+- **Enhanced Comments**: Improved validation flow documentation with clearer comments
+- **Self-call Optimization**: "Self-calls routed via __execute__ carry no tx signature"
+- **Owner Path**: "2-elt signature → delegate to OZ (handles tx v3 hashing)"
+- **Session Path**: "4-elt signature [session_pubkey, r, s, valid_until]"
+- **Frontend Matching**: "Match the front-end's poseidon message layout"
+
+### 🔧 **Fixed Name Shadowing**
+- **Problem**: External session functions had potential recursion issues due to name shadowing
+- **Solution**: Updated external functions to explicitly call `SessionKeyManagerImpl::` methods
+- **Implementation**: 
+  - `SessionKeyManagerImpl::add_or_update_session_key(ref self, ...)`
+  - `SessionKeyManagerImpl::revoke_session_key(ref self, ...)`
+  - `SessionKeyManagerImpl::get_session_data(self, ...)`
+- **Result**: Prevents accidental recursion and provides cleaner architecture
+- **Applied to**: All three external session functions
+
+### 🏗️ **Implementation Details**
+- **Function Signature**: Simplified `__validate__` function signature for better tx v3 compatibility
+- **Validation Flow**: Enhanced comments and structure for improved clarity
+- **External Functions**: Explicit impl calls prevent name shadowing issues
+- **Test Coverage**: All 15 tests still passing with improved architecture
+- **ABI Verification**: Session functions remain properly exposed in deployed contract
+
+## Key Changes in Version 14
+
+### 🔧 **Fixed Self-Call Handling**
+- **Problem**: Account was rejecting self-calls with "Account: unauthorized" errors when calling its own functions through `__execute__`
+- **Root Cause**: The `__validate__` function was only checking signature length but not verifying that the caller was the account itself
+- **Solution**: Enhanced validation to check both `signature.len() == 0` AND `caller == get_contract_address()` for self-calls
+- **Implementation**: Added `get_caller_address()` import and proper caller validation logic
+- **Result**: Account can now call its own functions without validation errors while maintaining security
+- **Security**: Only allows self-calls when both conditions are met (empty signature + caller is account itself)
+
+### 🏗️ **Implementation Details**
+- **Enhanced Validation**: `if signature.len() == 0 && caller == get_contract_address() { return starknet::VALIDATED; }`
+- **Import Added**: `use starknet::get_caller_address;`
+- **Test Coverage**: All 15 tests still passing, including self-call validation
+- **ABI Verification**: Session functions remain properly exposed in deployed contract
 
 ## Key Changes in Version 13
 

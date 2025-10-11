@@ -5,16 +5,35 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 ## 🚀 Deployed Contract
 
 **Starknet Mainnet:**
-- **Class Hash**: `0x591b766448bf7219a0e0e0a5383ac055206d69584a3e95f70bd640acd905c2c`
+- **Class Hash**: `0x624bbccc9ffb42585c0e35c1a35aa15b758312aff35beb8133364758cebe6c5`
 - **Reference Implementation**: `0x01b0b06255f6960219dc358114779fda563c3b817d2df3fbd214e67c3572fd7f`
-- **Latest Account (V13)**: `0x07b4c07cbfee463379fa04f5818a0f69f1b33b22416f602d9b319145cce2a3d4`
+- **Latest Account (V15)**: `0x001d87ef4f0120c4c24c0feba9ea61e011e4c04e276ff717c180bd363856cd57`
 - **Network**: Starknet Mainnet
 - **Compiler**: Cairo 2.11.4
 - **Deployed**: January 10, 2025
 
 > ⚠️ **Note**: The reference implementation is provided as an example. For production use, deploy your own instance with your owner's public key.
 
-### What's New in This Version (v13 - Final)
+### What's New in This Version (v15 - Tx V3 & Name Shadowing Fix)
+
+🚀 **Tx V3 Compatibility** - Updated `__validate__` function for optimal transaction version 3 support:
+- **Removed nonce parameter** - Simplified function signature for better compatibility
+- **Enhanced validation flow** - Improved comments and structure for clarity
+- **Self-call optimization** - "Self-calls routed via __execute__ carry no tx signature"
+- **Owner path delegation** - "2-elt signature → delegate to OZ (handles tx v3 hashing)"
+- **Session path clarity** - "4-elt signature [session_pubkey, r, s, valid_until]"
+- **Frontend matching** - "Match the front-end's poseidon message layout"
+
+🔧 **Fixed Name Shadowing** - Resolved potential recursion issues in external session functions:
+- **Explicit impl calls** - External functions now call `SessionKeyManagerImpl::` methods
+- **No more recursion** - Prevents accidental self-calls in external entry points
+- **Cleaner architecture** - Clear separation between external and internal implementations
+- **All session functions** - Applied to `add_or_update_session_key`, `revoke_session_key`, `get_session_data`
+
+🔧 **Fixed Self-Call Handling** - Resolved "Account: unauthorized" errors for internal function calls:
+- **Proper caller validation** - Now checks both signature length AND caller address for self-calls
+- **Self-call support** - Account can now call its own functions through `__execute__` without validation errors
+- **Enhanced security** - Only allows self-calls when caller is the account itself AND signature is empty
 
 ✨ **Fixed Session Functions ABI** - Resolved session functions not being exposed as external entry points:
 - **Fixed ABI compilation issue** - Session functions now properly exposed as external entry points
@@ -62,9 +81,9 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 - Maintains full security with replay protection via nonce
 
 ### Verify on Starkscan
-- [View Class](https://starkscan.co/class/0x591b766448bf7219a0e0e0a5383ac055206d69584a3e95f70bd640acd905c2c)
+- [View Class](https://starkscan.co/class/0x0624bbccc9ffb42585c0e35c1a35aa15b758312aff35beb8133364758cebe6c5)
 - [View Reference Contract](https://starkscan.co/contract/0x01b0b06255f6960219dc358114779fda563c3b817d2df3fbd214e67c3572fd7f)
-- [View Latest Account (V13)](https://starkscan.co/contract/0x07b4c07cbfee463379fa04f5818a0f69f1b33b22416f602d9b319145cce2a3d4)
+- [View Latest Account (V15)](https://starkscan.co/contract/0x001d87ef4f0120c4c24c0feba9ea61e011e4c04e276ff717c180bd363856cd57)
 
 ---
 

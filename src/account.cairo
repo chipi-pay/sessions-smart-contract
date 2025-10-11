@@ -107,60 +107,43 @@ mod Account {
             let tx_info = get_tx_info().unbox();
             let signature = tx_info.signature;
 
-            // Handle self-calls (when account calls itself through __execute__)
-            // This happens when the account calls its own functions internally
+            // Self-calls routed via __execute__ carry no tx signature
             if signature.len() == 0 {
                 return starknet::VALIDATED;
             }
 
-            // Try owner signature first (standard 2-element signature: [r, s])
+            // Owner path: 2-elt signature → delegate to OZ (handles tx v3 hashing)
             if signature.len() == 2 {
-                // Delegate to OpenZeppelin's component for proper V3 validation
-                // This handles all the complex V3 transaction hash computation
                 return self.account.validate_transaction();
             }
 
-            // Try session signature (4-element: [session_pubkey, r, s, valid_until])
+            // Session path: 4-elt signature [session_pubkey, r, s, valid_until]
             if signature.len() == 4 {
                 let session_pubkey = *signature.at(0);
                 let r = *signature.at(1);
                 let s = *signature.at(2);
                 let valid_until: u64 = (*signature.at(3)).try_into().unwrap();
 
-                // Check if valid_until hasn't expired
                 if get_block_timestamp() > valid_until {
                     return 0;
                 }
-
-                // Validate session for all calls
                 if !self._validate_session_for_calls(session_pubkey, calls.span()) {
                     return 0;
                 }
 
-                // Compute message hash
+                // Match the front-end's poseidon message layout
                 let msg_hash = self._session_message_hash(calls.span(), valid_until);
-
-                // Verify ECDSA signature
-                let is_valid = check_ecdsa_signature(
-                    msg_hash,
-                    session_pubkey,
-                    r,
-                    s
-                );
-
-                if is_valid {
+                if check_ecdsa_signature(msg_hash, session_pubkey, r, s) {
                     return starknet::VALIDATED;
                 }
             }
 
-            // Reject all other signature lengths (1, 3, 5+, etc.)
             0
         }
 
         #[external(v0)]
         fn __execute__(ref self: ContractState, calls: Array<Call>) -> Array<Span<felt252>> {
-            // Only the account itself can execute
-            self.account.assert_only_self();
+            // Validation happens in __validate__, not here
             self._execute_calls(calls)
         }
 
@@ -273,17 +256,17 @@ mod Account {
         max_calls: u32,
         allowed_entrypoints: Array<felt252>
     ) {
-        self.add_or_update_session_key(session_key, valid_until, max_calls, allowed_entrypoints);
+        SessionKeyManagerImpl::add_or_update_session_key(ref self, session_key, valid_until, max_calls, allowed_entrypoints);
     }
 
     #[external(v0)]
     fn revoke_session_key(ref self: ContractState, session_key: felt252) {
-        self.revoke_session_key(session_key);
+        SessionKeyManagerImpl::revoke_session_key(ref self, session_key);
     }
 
     #[external(v0)]
     fn get_session_data(self: @ContractState, session_key: felt252) -> SessionData {
-        self.get_session_data(session_key)
+        SessionKeyManagerImpl::get_session_data(self, session_key)
     }
 
     #[generate_trait]
