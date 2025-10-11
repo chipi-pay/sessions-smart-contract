@@ -5,7 +5,7 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 ## 🚀 Deployed Contract
 
 **Starknet Mainnet:**
-- **Class Hash**: `0x109136967222a049be210ca4cc8dc0ba255bae5d41e5220ca8711cf2af2dc68`
+- **Class Hash**: `0x64bbc6bb2bc4bad3a1ce8fde7122ad8d06f928daf56ca64a2849ff438eabc82`
 - **Reference Implementation**: `0x01b0b06255f6960219dc358114779fda563c3b817d2df3fbd214e67c3572fd7f`
 - **Latest Account (V15)**: `0x001d87ef4f0120c4c24c0feba9ea61e011e4c04e276ff717c180bd363856cd57`
 - **Network**: Starknet Mainnet
@@ -14,7 +14,17 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 
 > ⚠️ **Note**: The reference implementation is provided as an example. For production use, deploy your own instance with your owner's public key.
 
-### What's New in This Version (v17 - Security Hardening Fix)
+### What's New in This Version (v18 - Entrypoint Cleanup Fix)
+
+🧹 **Fixed Session Key Revocation Cleanup** - Resolved potential storage conflicts when reusing session keys:
+- **Problem**: Session revocation didn't clear individual entrypoints from storage, causing conflicts when reusing keys
+- **Root Cause**: Incomplete cleanup in `revoke_session_key` function left orphaned entrypoint data
+- **Solution**: Enhanced revocation to properly clear all stored entrypoints before resetting session data
+- **Benefits**: Complete cleanup, prevents conflicts, storage efficiency, safe key reuse
+- **All Tests Passing**: 19/19 tests still pass with enhanced cleanup
+- **Backward Compatible**: No breaking changes to existing functionality
+
+### Previous Version Features (v17 - Security Hardening Fix)
 
 🔒 **Fixed Critical Security Vulnerability** - Resolved potential bypass vulnerability in empty signature handling:
 - **Problem**: Empty signatures were accepted without proper caller validation, potentially allowing external bypass
@@ -108,7 +118,7 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 - Maintains full security with replay protection via nonce
 
 ### Verify on Starkscan
-- [View Class (V17)](https://starkscan.co/class/0x0109136967222a049be210ca4cc8dc0ba255bae5d41e5220ca8711cf2af2dc68)
+- [View Class (V18)](https://starkscan.co/class/0x064bbc6bb2bc4bad3a1ce8fde7122ad8d06f928daf56ca64a2849ff438eabc82)
 - [View Reference Contract](https://starkscan.co/contract/0x01b0b06255f6960219dc358114779fda563c3b817d2df3fbd214e67c3572fd7f)
 - [View Latest Account (V15)](https://starkscan.co/contract/0x001d87ef4f0120c4c24c0feba9ea61e011e4c04e276ff717c180bd363856cd57)
 

@@ -238,6 +238,21 @@ mod Account {
         fn revoke_session_key(ref self: ContractState, session_key: felt252) {
             self.account.assert_only_self();
             
+            // Get the current session data to know how many entrypoints to clear
+            let current_session = self.session_keys.read(session_key);
+            let entrypoints_to_clear = current_session.allowed_entrypoints_len;
+            
+            // Clear all stored entrypoints for this session key
+            let mut i = 0;
+            loop {
+                if i >= entrypoints_to_clear {
+                    break;
+                }
+                // Clear the entrypoint by writing 0 (default value)
+                self.session_entrypoints.write((session_key, i), 0);
+                i += 1;
+            };
+            
             let sess = SessionData {
                 valid_until: 0,
                 max_calls: 0,

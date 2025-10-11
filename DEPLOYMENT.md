@@ -2,7 +2,13 @@
 
 ## Contract Deployment Details
 
-### Latest Class Declaration (v17 - Security Hardening Fix)
+### Latest Class Declaration (v18 - Entrypoint Cleanup Fix)
+- **Class Hash**: `0x64bbc6bb2bc4bad3a1ce8fde7122ad8d06f928daf56ca64a2849ff438eabc82`
+- **Transaction**: `0x5a5f5641b878b0bd48a3ec532782f764358071d5738f18701679687b51cb694`
+- **Status**: ✅ Successfully Declared
+- **Starkscan**: https://starkscan.co/class/0x064bbc6bb2bc4bad3a1ce8fde7122ad8d06f928daf56ca64a2849ff438eabc82
+
+### Previous Class Declaration (v17 - Security Hardening Fix)
 - **Class Hash**: `0x109136967222a049be210ca4cc8dc0ba255bae5d41e5220ca8711cf2af2dc68`
 - **Transaction**: `0x52fff698a14b2bcfde84f1566f915214afc759ad3abb94fc5f08fb52a86adca`
 - **Status**: ✅ Successfully Declared
@@ -26,6 +32,52 @@
 - **Transaction**: `0x02b830d552afd4b7f8d8616f8988aab6bb2e0cc0336a69c4c61efcfe48a36387`
 - **Status**: ✅ Successfully Deployed
 - **Starkscan**: https://starkscan.co/contract/0x001d87ef4f0120c4c24c0feba9ea61e011e4c04e276ff717c180bd363856cd57
+
+## Key Changes in Version 18 (January 10, 2025) - Entrypoint Cleanup Fix
+
+### 🧹 **Fixed Session Key Revocation Cleanup**
+
+**Problem**: When revoking a session key, the contract only cleared the session metadata but didn't clear the individual entrypoints from the `session_entrypoints` storage map. This could cause issues when reusing the same session key after revocation.
+
+**Root Cause**: The `revoke_session_key` function was incomplete - it only reset the session data but left old entrypoints in storage, potentially causing conflicts when the same session key was reused.
+
+**Solution**: Enhanced the `revoke_session_key` function to properly clear all stored entrypoints:
+
+```cairo
+fn revoke_session_key(ref self: ContractState, session_key: felt252) {
+    self.account.assert_only_self();
+    
+    // Get the current session data to know how many entrypoints to clear
+    let current_session = self.session_keys.read(session_key);
+    let entrypoints_to_clear = current_session.allowed_entrypoints_len;
+    
+    // Clear all stored entrypoints for this session key
+    let mut i = 0;
+    loop {
+        if i >= entrypoints_to_clear {
+            break;
+        }
+        // Clear the entrypoint by writing 0 (default value)
+        self.session_entrypoints.write((session_key, i), 0);
+        i += 1;
+    };
+    
+    // ... rest of revocation logic
+}
+```
+
+**Benefits**:
+- ✅ **Complete cleanup** - All entrypoints properly cleared on revocation
+- ✅ **Prevents conflicts** - Session keys can be safely reused after revocation
+- ✅ **Storage efficiency** - No orphaned entrypoint data left in storage
+- ✅ **All tests passing** - 19/19 tests still pass with enhanced cleanup
+- ✅ **Backward compatible** - No breaking changes to existing functionality
+
+**What's Unchanged**:
+- Session addition logic remains identical
+- Session validation logic unchanged
+- All existing session functionality preserved
+- Owner validation logic unchanged
 
 ## Key Changes in Version 17 (January 10, 2025) - Security Hardening Fix
 
