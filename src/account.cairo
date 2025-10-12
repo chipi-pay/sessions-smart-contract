@@ -135,13 +135,16 @@ mod Account {
                 if get_block_timestamp() > valid_until {
                     return 0;
                 }
-                if !self._validate_session_for_calls(session_pubkey, calls.span()) {
+                // Use pure check first (no mutations)
+                if !self._is_session_allowed_for_calls(session_pubkey, calls.span()) {
                     return 0;
                 }
 
                 // Match the front-end's poseidon message layout
                 let msg_hash = self._session_message_hash(calls.span(), valid_until);
                 if check_ecdsa_signature(msg_hash, session_pubkey, r, s) {
+                    // Only increment counter after valid signature
+                    self._consume_session_call(session_pubkey);
                     return starknet::VALIDATED;
                 }
             }
@@ -203,7 +206,7 @@ mod Account {
         }
     }
 
-    // Session key management with external entry points - v21 (Entrypoint Validation Fix)
+    // Session key management with external entry points - v22 (Enhanced Debugging & ERC-1271)
     impl SessionKeyManagerImpl of super::ISessionKeyManager<ContractState> {
         fn add_or_update_session_key(
             ref self: ContractState,
@@ -301,7 +304,46 @@ mod Account {
     #[external(v0)]
     fn get_contract_info(self: @ContractState) -> felt252 {
         // Return a version identifier
-        'v21_entrypoint_fix'
+        'v22_debug_erc1271'
+    }
+
+    // NEW: Compute session message hash for debugging
+    #[external(v0)]
+    fn compute_session_message_hash(
+        self: @ContractState,
+        calls: Array<starknet::account::Call>,
+        valid_until: u64
+    ) -> felt252 {
+        self._session_message_hash(calls.span(), valid_until)
+    }
+
+    // NEW: ERC-1271 style signature validation
+    #[external(v0)]
+    fn is_valid_signature(
+        self: @ContractState, 
+        hash: felt252, 
+        signature: Array<felt252>
+    ) -> felt252 {
+        if signature.len() != 2 { return 0; }
+        let public_key = self.account.get_public_key();
+        let ok = check_ecdsa_signature(hash, public_key, *signature.at(0), *signature.at(1));
+        if ok { starknet::VALIDATED } else { 0 }
+    }
+
+    // NEW: Read-only session entrypoint helpers
+    #[external(v0)]
+    fn get_session_allowed_entrypoints_len(self: @ContractState, session_key: felt252) -> u32 {
+        let s = self.session_keys.read(session_key);
+        s.allowed_entrypoints_len
+    }
+
+    #[external(v0)]
+    fn get_session_allowed_entrypoint_at(
+        self: @ContractState, 
+        session_key: felt252, 
+        index: u32
+    ) -> felt252 {
+        self._load_entrypoint(session_key, index)
     }
 
 
@@ -363,6 +405,46 @@ mod Account {
             // Return validation result and debug info
             let result = self._validate_session_for_calls(session_key, calls);
             (result, session.valid_until, session.max_calls, session.calls_used, session.allowed_entrypoints_len)
+        }
+
+        // NEW: Pure session validation check (no mutations)
+        fn _is_session_allowed_for_calls(
+            self: @ContractState,
+            session_key: felt252,
+            calls: Span<Call>
+        ) -> bool {
+            let session = self.session_keys.read(session_key);
+            if session.valid_until == 0 { return false; }
+            if get_block_timestamp() > session.valid_until { return false; }
+            if session.calls_used >= session.max_calls { return false; }
+
+            if session.allowed_entrypoints_len == 0 { return true; }
+
+            let mut i = 0;
+            loop {
+                if i >= calls.len() { break; }
+                let call = calls.at(i);
+                let selector = *call.selector;
+
+                let mut j = 0;
+                let mut found = false;
+                loop {
+                    if j >= session.allowed_entrypoints_len { break; }
+                    let allowed = self._load_entrypoint(session_key, j);
+                    if allowed == selector { found = true; break; }
+                    j += 1;
+                };
+                if !found { return false; }
+                i += 1;
+            };
+            true
+        }
+
+        // NEW: Consume session call (increment counter only)
+        fn _consume_session_call(ref self: ContractState, session_key: felt252) {
+            let mut session = self.session_keys.read(session_key);
+            session.calls_used += 1;
+            self.session_keys.write(session_key, session);
         }
 
 
