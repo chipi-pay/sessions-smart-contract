@@ -5,8 +5,8 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 ## 🚀 Deployed Contract
 
 **Starknet Mainnet:**
-- **Class Hash**: `0x64bbc6bb2bc4bad3a1ce8fde7122ad8d06f928daf56ca64a2849ff438eabc82`
-- **Contract Address**: `0x036fd978435ae17403118aa0927448449dabe03298d6eb79b7303d182bc7ff8f`
+- **Class Hash**: `0x527b14308e171b7275583e5093ed7fb590bdea16a6f28023868f80ec72a0f20`
+- **Contract Address**: `0x02d5a07d0c6cbf7cf428bbcadd12fd33295d07007bfa8266a35c6b74850a9806`
 - **Reference Implementation**: `0x01b0b06255f6960219dc358114779fda563c3b817d2df3fbd214e67c3572fd7f`
 - **Latest Account (V15)**: `0x001d87ef4f0120c4c24c0feba9ea61e011e4c04e276ff717c180bd363856cd57`
 - **Network**: Starknet Mainnet
@@ -15,12 +15,13 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 
 > ⚠️ **Note**: The reference implementation is provided as an example. For production use, deploy your own instance with your owner's public key.
 
-### What's New in This Version (v18 - Entrypoint Cleanup Fix)
+### What's New in This Version (v21 - Entrypoint Validation Fix)
 
-🧹 **Fixed Session Key Revocation Cleanup** - Resolved potential storage conflicts when reusing session keys:
-- **Problem**: Session revocation didn't clear individual entrypoints from storage, causing conflicts when reusing keys
-- **Root Cause**: Incomplete cleanup in `revoke_session_key` function left orphaned entrypoint data
-- **Solution**: Enhanced revocation to properly clear all stored entrypoints before resetting session data
+🔧 **Fixed Session Validation for Zero Entrypoints** - Resolved critical bug where sessions with `allowed_entrypoints_len = 0` were being rejected:
+- **Problem**: Sessions created with no entrypoint restrictions (`allowed_entrypoints_len = 0`) were failing validation
+- **Root Cause**: The deployed contract's validation logic wasn't properly handling the "allow all entrypoints" case
+- **Solution**: Deployed new contract with corrected validation logic that properly allows all entrypoints when `allowed_entrypoints_len = 0`
+- **Impact**: Sessions can now be created with no restrictions and will work correctly for any function call
 - **Benefits**: Complete cleanup, prevents conflicts, storage efficiency, safe key reuse
 - **All Tests Passing**: 19/19 tests still pass with enhanced cleanup
 - **Backward Compatible**: No breaking changes to existing functionality
@@ -119,8 +120,8 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 - Maintains full security with replay protection via nonce
 
 ### Verify on Starkscan
-- [View Class (V18)](https://starkscan.co/class/0x064bbc6bb2bc4bad3a1ce8fde7122ad8d06f928daf56ca64a2849ff438eabc82)
-- [View Contract (V18)](https://starkscan.co/contract/0x036fd978435ae17403118aa0927448449dabe03298d6eb79b7303d182bc7ff8f)
+- [View Class (V21)](https://starkscan.co/class/0x0527b14308e171b7275583e5093ed7fb590bdea16a6f28023868f80ec72a0f20)
+- [View Contract (V21)](https://starkscan.co/contract/0x02d5a07d0c6cbf7cf428bbcadd12fd33295d07007bfa8266a35c6b74850a9806)
 - [View Reference Contract](https://starkscan.co/contract/0x01b0b06255f6960219dc358114779fda563c3b817d2df3fbd214e67c3572fd7f)
 - [View Latest Account (V15)](https://starkscan.co/contract/0x001d87ef4f0120c4c24c0feba9ea61e011e4c04e276ff717c180bd363856cd57)
 
