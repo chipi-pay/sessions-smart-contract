@@ -22,9 +22,10 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 - **Root Cause**: The deployed contract's validation logic wasn't properly handling the "allow all entrypoints" case
 - **Solution**: Deployed new contract with corrected validation logic that properly allows all entrypoints when `allowed_entrypoints_len = 0`
 - **Impact**: Sessions can now be created with no restrictions and will work correctly for any function call
-- **Benefits**: Complete cleanup, prevents conflicts, storage efficiency, safe key reuse
-- **All Tests Passing**: 19/19 tests still pass with enhanced cleanup
+- **All Tests Passing**: 15/15 tests pass with corrected validation logic
 - **Backward Compatible**: No breaking changes to existing functionality
+- **Production Ready**: New contract deployed and verified on Starkscan
+- **New Function**: Added `get_contract_info()` for version tracking and contract identification
 
 ### Previous Version Features (v17 - Security Hardening Fix)
 
@@ -650,6 +651,20 @@ struct SessionData {
 
 ---
 
+#### `get_contract_info`
+
+Returns contract version information. **Public read**.
+
+```cairo
+fn get_contract_info(
+    self: @TContractState
+) -> felt252;
+
+// Returns: 'v21_entrypoint_fix' (version identifier)
+```
+
+---
+
 ### SRC-6 Interface (Account)
 
 #### `__validate__`
@@ -833,9 +848,21 @@ const sessionMsgHash = hash.computeHashOnElements([
 **Root Cause**: Contract not properly deployed or ABI compilation issue.
 
 **Solution**: 
-1. Verify contract is deployed with correct class hash: `0x624bbccc9ffb42585c0e35c1a35aa15b758312aff35beb8133364758cebe6c5`
+1. Verify contract is deployed with correct class hash: `0x527b14308e171b7275583e5093ed7fb590bdea16a6f28023868f80ec72a0f20`
 2. Check contract ABI includes session functions
-3. Ensure you're using the latest deployed version
+3. Ensure you're using the latest deployed version (v21)
+4. Use the new contract address: `0x02d5a07d0c6cbf7cf428bbcadd12fd33295d07007bfa8266a35c6b74850a9806`
+
+#### "Account: invalid signature" for Sessions with Zero Entrypoints
+
+**Problem**: Sessions created with `allowed_entrypoints_len = 0` (no restrictions) fail with "Account: invalid signature".
+
+**Root Cause**: The old contract (v18 and earlier) had a bug in validation logic for zero entrypoints.
+
+**Solution**: Use the new contract (v21) which properly handles sessions with no entrypoint restrictions:
+- **New Class Hash**: `0x527b14308e171b7275583e5093ed7fb590bdea16a6f28023868f80ec72a0f20`
+- **New Contract Address**: `0x02d5a07d0c6cbf7cf428bbcadd12fd33295d07007bfa8266a35c6b74850a9806`
+- **Fix**: Sessions with `allowed_entrypoints_len = 0` now correctly allow all entrypoints
 
 ### Smart Contract Issues
 
