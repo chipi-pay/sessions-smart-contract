@@ -5,24 +5,31 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 ## 🚀 Deployed Contract
 
 **Starknet Mainnet:**
-- **Class Hash**: `0x527b14308e171b7275583e5093ed7fb590bdea16a6f28023868f80ec72a0f20`
-- **Contract Address**: `0x02d5a07d0c6cbf7cf428bbcadd12fd33295d07007bfa8266a35c6b74850a9806`
+- **Class Hash**: `0x32008071322d9ef668e4308886f76fdc77679dc5e213127d5378b42c77bf5a5`
+- **Contract Address**: `0x01821ff8d12daa4f4406daea573a0f7bcba8aae62b90632384176a6b780c15fd`
 - **Reference Implementation**: `0x01b0b06255f6960219dc358114779fda563c3b817d2df3fbd214e67c3572fd7f`
-- **Latest Account (V15)**: `0x001d87ef4f0120c4c24c0feba9ea61e011e4c04e276ff717c180bd363856cd57`
+- **Previous Account (V21)**: `0x02d5a07d0c6cbf7cf428bbcadd12fd33295d07007bfa8266a35c6b74850a9806`
 - **Network**: Starknet Mainnet
 - **Compiler**: Cairo 2.11.4
-- **Deployed**: January 10, 2025
+- **Deployed**: January 11, 2025
 
 > ⚠️ **Note**: The reference implementation is provided as an example. For production use, deploy your own instance with your owner's public key.
 
-### What's New in This Version (v21 - Entrypoint Validation Fix)
+### What's New in This Version (v22 - Enhanced Debugging & ERC-1271)
 
 🔧 **Fixed Session Validation for Zero Entrypoints** - Resolved critical bug where sessions with `allowed_entrypoints_len = 0` were being rejected:
 - **Problem**: Sessions created with no entrypoint restrictions (`allowed_entrypoints_len = 0`) were failing validation
 - **Root Cause**: The deployed contract's validation logic wasn't properly handling the "allow all entrypoints" case
 - **Solution**: Deployed new contract with corrected validation logic that properly allows all entrypoints when `allowed_entrypoints_len = 0`
 - **Impact**: Sessions can now be created with no restrictions and will work correctly for any function call
-- **All Tests Passing**: 15/15 tests pass with corrected validation logic
+
+🔍 **Enhanced Debugging & ERC-1271 Support** - Added powerful debugging tools and standard compatibility:
+- **New Function**: `compute_session_message_hash()` - Returns exact hash the contract computes for debugging
+- **New Function**: `is_valid_signature()` - ERC-1271 compatible signature validation for external contracts
+- **New Functions**: `get_session_allowed_entrypoints_len()` and `get_session_allowed_entrypoint_at()` - Read-only session inspection
+- **Improved Validation**: Split session validation into pure policy check and counter increment
+- **Security Enhancement**: Counter only increments after valid signature verification
+- **All Tests Passing**: 15/15 tests pass with enhanced functionality
 - **Backward Compatible**: No breaking changes to existing functionality
 - **Production Ready**: New contract deployed and verified on Starkscan
 - **New Function**: Added `get_contract_info()` for version tracking and contract identification
@@ -121,10 +128,10 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 - Maintains full security with replay protection via nonce
 
 ### Verify on Starkscan
-- [View Class (V21)](https://starkscan.co/class/0x0527b14308e171b7275583e5093ed7fb590bdea16a6f28023868f80ec72a0f20)
-- [View Contract (V21)](https://starkscan.co/contract/0x02d5a07d0c6cbf7cf428bbcadd12fd33295d07007bfa8266a35c6b74850a9806)
+- [View Class (V22)](https://starkscan.co/class/0x032008071322d9ef668e4308886f76fdc77679dc5e213127d5378b42c77bf5a5)
+- [View Contract (V22)](https://starkscan.co/contract/0x01821ff8d12daa4f4406daea573a0f7bcba8aae62b90632384176a6b780c15fd)
+- [View Previous Contract (V21)](https://starkscan.co/contract/0x02d5a07d0c6cbf7cf428bbcadd12fd33295d07007bfa8266a35c6b74850a9806)
 - [View Reference Contract](https://starkscan.co/contract/0x01b0b06255f6960219dc358114779fda563c3b817d2df3fbd214e67c3572fd7f)
-- [View Latest Account (V15)](https://starkscan.co/contract/0x001d87ef4f0120c4c24c0feba9ea61e011e4c04e276ff717c180bd363856cd57)
 
 ---
 
@@ -660,7 +667,7 @@ fn get_contract_info(
     self: @TContractState
 ) -> felt252;
 
-// Returns: 'v21_entrypoint_fix' (version identifier)
+// Returns: 'v22_debug_erc1271' (version identifier)
 ```
 
 ---
@@ -848,10 +855,10 @@ const sessionMsgHash = hash.computeHashOnElements([
 **Root Cause**: Contract not properly deployed or ABI compilation issue.
 
 **Solution**: 
-1. Verify contract is deployed with correct class hash: `0x527b14308e171b7275583e5093ed7fb590bdea16a6f28023868f80ec72a0f20`
+1. Verify contract is deployed with correct class hash: `0x32008071322d9ef668e4308886f76fdc77679dc5e213127d5378b42c77bf5a5`
 2. Check contract ABI includes session functions
-3. Ensure you're using the latest deployed version (v21)
-4. Use the new contract address: `0x02d5a07d0c6cbf7cf428bbcadd12fd33295d07007bfa8266a35c6b74850a9806`
+3. Ensure you're using the latest deployed version (v22)
+4. Use the new contract address: `0x01821ff8d12daa4f4406daea573a0f7bcba8aae62b90632384176a6b780c15fd`
 
 #### "Account: invalid signature" for Sessions with Zero Entrypoints
 
@@ -859,9 +866,9 @@ const sessionMsgHash = hash.computeHashOnElements([
 
 **Root Cause**: The old contract (v18 and earlier) had a bug in validation logic for zero entrypoints.
 
-**Solution**: Use the new contract (v21) which properly handles sessions with no entrypoint restrictions:
-- **New Class Hash**: `0x527b14308e171b7275583e5093ed7fb590bdea16a6f28023868f80ec72a0f20`
-- **New Contract Address**: `0x02d5a07d0c6cbf7cf428bbcadd12fd33295d07007bfa8266a35c6b74850a9806`
+**Solution**: Use the new contract (v22) which properly handles sessions with no entrypoint restrictions:
+- **New Class Hash**: `0x32008071322d9ef668e4308886f76fdc77679dc5e213127d5378b42c77bf5a5`
+- **New Contract Address**: `0x01821ff8d12daa4f4406daea573a0f7bcba8aae62b90632384176a6b780c15fd`
 - **Fix**: Sessions with `allowed_entrypoints_len = 0` now correctly allow all entrypoints
 
 ### Smart Contract Issues
