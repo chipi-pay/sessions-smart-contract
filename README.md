@@ -4,8 +4,8 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 
 ## 🚀 Deployed Contract
 
-**Starknet Mainnet:**
-- **Class Hash**: `0x32008071322d9ef668e4308886f76fdc77679dc5e213127d5378b42c77bf5a5`
+**Starknet Mainnet (Production Version - SECURE):**
+- **Class Hash**: `0x00097c307b5e2869713d376309a4e43028b6ef17061499022103304b482c7298`
 - **Contract Address**: `0x01821ff8d12daa4f4406daea573a0f7bcba8aae62b90632384176a6b780c15fd`
 - **Reference Implementation**: `0x01b0b06255f6960219dc358114779fda563c3b817d2df3fbd214e67c3572fd7f`
 - **Previous Account (V21)**: `0x02d5a07d0c6cbf7cf428bbcadd12fd33295d07007bfa8266a35c6b74850a9806`
@@ -13,9 +13,27 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 - **Compiler**: Cairo 2.11.4
 - **Deployed**: January 11, 2025
 
+**Starknet Mainnet (Debug Version - FOR DEBUGGING ONLY):**
+- **Class Hash**: `0x052458a2546699d1c175eccc31ac8ff6ccfa284ab7c7c384d37ceaf96abf4cb0`
+- **Contract Address**: `0x06573411e4181fb6b43e2800fb8f2936bbe592f925c7c66e04858565f23a2b25`
+- **Network**: Starknet Mainnet
+- **Compiler**: Cairo 2.11.4
+- **Deployed**: January 11, 2025
+- **Source**: `src/debug_account.cairo` (separate from main production contract)
+
+> ⚠️ **CRITICAL WARNING**: The debug version contains `compute_session_message_hash_offchain` and `debug_validate_session_signature` functions that allow forced nonce and chain_id parameters. **DO NOT USE IN PRODUCTION** as this creates serious security vulnerabilities including replay attacks and cross-chain replay attacks. Use only for debugging and testing purposes.
+
 > ⚠️ **Note**: The reference implementation is provided as an example. For production use, deploy your own instance with your owner's public key.
 
-### What's New in This Version (v22 - Enhanced Debugging & ERC-1271)
+### What's New in This Version (v22 - Production Secure)
+
+🔒 **Enhanced Security Architecture** - Implemented improved validation flow with better security guarantees:
+- **Pure Validation First**: Added `_is_session_allowed_for_calls()` for non-mutating validation checks
+- **Secure Counter Management**: Added `_consume_session_call()` that only increments after successful signature verification
+- **Improved Validation Flow**: Session validation now uses pure checks before signature verification
+- **Security Enhancement**: Counter only increments after valid signature verification, preventing state corruption
+- **All Tests Passing**: 15/15 tests pass with enhanced security
+- **Production Ready**: Secure contract deployed and verified on Starkscan
 
 🔧 **Fixed Session Validation for Zero Entrypoints** - Resolved critical bug where sessions with `allowed_entrypoints_len = 0` were being rejected:
 - **Problem**: Sessions created with no entrypoint restrictions (`allowed_entrypoints_len = 0`) were failing validation
@@ -23,16 +41,12 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 - **Solution**: Deployed new contract with corrected validation logic that properly allows all entrypoints when `allowed_entrypoints_len = 0`
 - **Impact**: Sessions can now be created with no restrictions and will work correctly for any function call
 
-🔍 **Enhanced Debugging & ERC-1271 Support** - Added powerful debugging tools and standard compatibility:
-- **New Function**: `compute_session_message_hash()` - Returns exact hash the contract computes for debugging
+🔍 **Enhanced Production Functions** - Added safe debugging tools and standard compatibility:
+- **New Function**: `compute_session_message_hash()` - Returns exact hash the contract computes (uses real tx_info, safe)
 - **New Function**: `is_valid_signature()` - ERC-1271 compatible signature validation for external contracts
 - **New Functions**: `get_session_allowed_entrypoints_len()` and `get_session_allowed_entrypoint_at()` - Read-only session inspection
-- **Improved Validation**: Split session validation into pure policy check and counter increment
-- **Security Enhancement**: Counter only increments after valid signature verification
-- **All Tests Passing**: 15/15 tests pass with enhanced functionality
-- **Backward Compatible**: No breaking changes to existing functionality
-- **Production Ready**: New contract deployed and verified on Starkscan
 - **New Function**: Added `get_contract_info()` for version tracking and contract identification
+- **Backward Compatible**: No breaking changes to existing functionality
 
 ### Previous Version Features (v17 - Security Hardening Fix)
 
@@ -128,8 +142,10 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 - Maintains full security with replay protection via nonce
 
 ### Verify on Starkscan
-- [View Class (V22)](https://starkscan.co/class/0x032008071322d9ef668e4308886f76fdc77679dc5e213127d5378b42c77bf5a5)
-- [View Contract (V22)](https://starkscan.co/contract/0x01821ff8d12daa4f4406daea573a0f7bcba8aae62b90632384176a6b780c15fd)
+- [View Class (V22 Production - SECURE)](https://starkscan.co/class/0x00097c307b5e2869713d376309a4e43028b6ef17061499022103304b482c7298)
+- [View Contract (V22 Production)](https://starkscan.co/contract/0x01821ff8d12daa4f4406daea573a0f7bcba8aae62b90632384176a6b780c15fd)
+- [View Class (V22 Debug)](https://starkscan.co/class/0x052458a2546699d1c175eccc31ac8ff6ccfa284ab7c7c384d37ceaf96abf4cb0)
+- [View Contract (V22 Debug)](https://starkscan.co/contract/0x06573411e4181fb6b43e2800fb8f2936bbe592f925c7c66e04858565f23a2b25)
 - [View Previous Contract (V21)](https://starkscan.co/contract/0x02d5a07d0c6cbf7cf428bbcadd12fd33295d07007bfa8266a35c6b74850a9806)
 - [View Reference Contract](https://starkscan.co/contract/0x01b0b06255f6960219dc358114779fda563c3b817d2df3fbd214e67c3572fd7f)
 
@@ -667,8 +683,52 @@ fn get_contract_info(
     self: @TContractState
 ) -> felt252;
 
-// Returns: 'v22_debug_erc1271' (version identifier)
+// Returns: 'v22_production_secure' (version identifier)
 ```
+
+---
+
+### Debug Functions (DEBUG VERSION ONLY)
+
+> ⚠️ **SECURITY WARNING**: These functions are only available in the debug version and should **NEVER** be used in production. They allow forced nonce and chain_id parameters which create serious security vulnerabilities.
+
+#### `compute_session_message_hash_offchain`
+
+Computes session message hash with forced nonce and chain_id. **DEBUG ONLY**.
+
+```cairo
+fn compute_session_message_hash_offchain(
+    self: @ContractState,
+    calls: Array<starknet::account::Call>,
+    valid_until: u64,
+    forced_nonce: felt252,        // ⚠️ SECURITY RISK: Allows replay attacks
+    forced_chain_id: felt252      // ⚠️ SECURITY RISK: Allows cross-chain replay
+) -> felt252;
+```
+
+**Security Risks**:
+- **Replay Attacks**: Forced nonce allows signature reuse
+- **Cross-Chain Replay**: Forced chain_id allows signature replay across networks
+- **Nonce Manipulation**: Bypasses single-use protection
+
+#### `debug_validate_session_signature`
+
+Validates session signature with forced parameters. **DEBUG ONLY**.
+
+```cairo
+fn debug_validate_session_signature(
+    self: @ContractState,
+    session_key: felt252,
+    calls: Array<starknet::account::Call>,
+    valid_until: u64,
+    forced_nonce: felt252,        // ⚠️ SECURITY RISK: Allows replay attacks
+    forced_chain_id: felt252,     // ⚠️ SECURITY RISK: Allows cross-chain replay
+    r: felt252,
+    s: felt252
+) -> (felt252, bool);            // Returns (message_hash, is_valid)
+```
+
+**Security Risks**: Same as above - allows bypassing critical security mechanisms.
 
 ---
 

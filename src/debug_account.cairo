@@ -206,7 +206,7 @@ mod Account {
         }
     }
 
-    // Session key management with external entry points - v13
+    // Session key management with external entry points - v22 (Enhanced Debugging & ERC-1271)
     impl SessionKeyManagerImpl of super::ISessionKeyManager<ContractState> {
         fn add_or_update_session_key(
             ref self: ContractState,
@@ -217,21 +217,26 @@ mod Account {
         ) {
             self.account.assert_only_self();
             
+            // Use the actual length of the allowed_entrypoints array
+            let actual_len = allowed_entrypoints.len();
+            
             let sess = SessionData {
                 valid_until,
                 max_calls,
                 calls_used: 0,
-                allowed_entrypoints_len: allowed_entrypoints.len(),
+                allowed_entrypoints_len: actual_len,
             };
             self.session_keys.write(session_key, sess);
             
-            // Store allowed entrypoints separately
+            // Store allowed entrypoints separately - FIXED VERSION v20
             let mut i = 0;
             loop {
                 if i >= allowed_entrypoints.len() {
                     break;
                 }
-                self._store_entrypoint(session_key, i, *allowed_entrypoints.at(i));
+                let entrypoint = *allowed_entrypoints.at(i);
+                // CRITICAL FIX: Ensure entrypoint is stored correctly
+                self._store_entrypoint(session_key, i, entrypoint);
                 i += 1;
             };
 
@@ -291,18 +296,18 @@ mod Account {
     }
 
     #[external(v0)]
-    fn get_session_data(self: @ContractState, session_key: felt252) -> SessionData {
-        SessionKeyManagerImpl::get_session_data(self, session_key)
-    }
+        fn get_session_data(self: @ContractState, session_key: felt252) -> SessionData {
+            SessionKeyManagerImpl::get_session_data(self, session_key)
+        }
 
-    // Production-safe functions (no security vulnerabilities)
+    // NEW: Function to get contract info (forces new class hash)
     #[external(v0)]
     fn get_contract_info(self: @ContractState) -> felt252 {
-        // Return a version identifier for production
-        'v22_production_secure'
+        // Return a version identifier
+        'v22_debug_erc1271'
     }
 
-    // Safe debugging: uses real tx_info (no forced parameters)
+    // NEW: Compute session message hash for debugging
     #[external(v0)]
     fn compute_session_message_hash(
         self: @ContractState,
@@ -312,7 +317,7 @@ mod Account {
         self._session_message_hash(calls.span(), valid_until)
     }
 
-    // ERC-1271 compatible signature validation
+    // NEW: ERC-1271 style signature validation
     #[external(v0)]
     fn is_valid_signature(
         self: @ContractState, 
@@ -325,7 +330,7 @@ mod Account {
         if ok { starknet::VALIDATED } else { 0 }
     }
 
-    // Read-only session entrypoint helpers (safe)
+    // NEW: Read-only session entrypoint helpers
     #[external(v0)]
     fn get_session_allowed_entrypoints_len(self: @ContractState, session_key: felt252) -> u32 {
         let s = self.session_keys.read(session_key);
@@ -341,14 +346,139 @@ mod Account {
         self._load_entrypoint(session_key, index)
     }
 
+    // ── 1) Offchain hash with forced nonce/chain_id ────────────────────────────────
+    #[external(v0)]
+    fn compute_session_message_hash_offchain(
+        self: @ContractState,
+        calls: Array<starknet::account::Call>,
+        valid_until: u64,
+        forced_nonce: felt252,
+        forced_chain_id: felt252
+    ) -> felt252 {
+        let mut hash_data = array![];
+        hash_data.append(get_contract_address().into());
+        hash_data.append(forced_chain_id.into());
+        hash_data.append(forced_nonce.into());
+        hash_data.append(valid_until.into());
+
+        let mut i = 0;
+        loop {
+            if i >= calls.len() { break; }
+            let call = calls.at(i);
+            hash_data.append((*call.to).into());
+            hash_data.append((*call.selector).into());
+            hash_data.append(call.calldata.len().into());
+            let mut j = 0;
+            loop {
+                if j >= call.calldata.len() { break; }
+                hash_data.append((*call.calldata.at(j)).into());
+                j += 1;
+            };
+            i += 1;
+        };
+
+        core::poseidon::poseidon_hash_span(hash_data.span())
+    }
+
+    // ── 2) Full dry-run: recompute + verify signature (no storage change) ─────────
+    #[external(v0)]
+    fn debug_validate_session_signature(
+        self: @ContractState,
+        session_key: felt252,
+        calls: Array<starknet::account::Call>,
+        valid_until: u64,
+        forced_nonce: felt252,
+        forced_chain_id: felt252,
+        r: felt252,
+        s: felt252
+    ) -> (felt252, bool) {
+        // Compute hash directly (same logic as compute_session_message_hash_offchain)
+        let mut hash_data = array![];
+        hash_data.append(get_contract_address().into());
+        hash_data.append(forced_chain_id.into());
+        hash_data.append(forced_nonce.into());
+        hash_data.append(valid_until.into());
+
+        let mut i = 0;
+        loop {
+            if i >= calls.len() { break; }
+            let call = calls.at(i);
+            hash_data.append((*call.to).into());
+            hash_data.append((*call.selector).into());
+            hash_data.append(call.calldata.len().into());
+            let mut j = 0;
+            loop {
+                if j >= call.calldata.len() { break; }
+                hash_data.append((*call.calldata.at(j)).into());
+                j += 1;
+            };
+            i += 1;
+        };
+
+        let msg_hash = core::poseidon::poseidon_hash_span(hash_data.span());
+        let ok = core::ecdsa::check_ecdsa_signature(msg_hash, session_key, r, s);
+        (msg_hash, ok)
+    }
+
+
     #[generate_trait]
     impl InternalImpl of InternalTrait {
         fn _store_entrypoint(ref self: ContractState, session_key: felt252, index: u32, entrypoint: felt252) {
+            // FIXED: Ensure entrypoint is properly stored
             self.session_entrypoints.write((session_key, index), entrypoint);
         }
 
         fn _load_entrypoint(self: @ContractState, session_key: felt252, index: u32) -> felt252 {
+            // FIXED: Properly load entrypoint from storage
             self.session_entrypoints.read((session_key, index))
+        }
+
+        // DEBUG: Function to verify entrypoint storage
+        fn _debug_entrypoint_storage(self: @ContractState, session_key: felt252, index: u32) -> felt252 {
+            self.session_entrypoints.read((session_key, index))
+        }
+
+        // DEBUG: Function to get session data for debugging
+        fn _debug_get_session_data(self: @ContractState, session_key: felt252) -> SessionData {
+            self.session_keys.read(session_key)
+        }
+
+        // DEBUG: Function to check if session exists
+        fn _debug_session_exists(self: @ContractState, session_key: felt252) -> bool {
+            let session = self.session_keys.read(session_key);
+            session.valid_until > 0
+        }
+
+        // DEBUG: Function to get all session data
+        fn _debug_get_all_session_data(self: @ContractState, session_key: felt252) -> (SessionData, felt252, felt252) {
+            let session = self.session_keys.read(session_key);
+            let entrypoint_0 = self.session_entrypoints.read((session_key, 0));
+            let entrypoint_1 = self.session_entrypoints.read((session_key, 1));
+            (session, entrypoint_0, entrypoint_1)
+        }
+
+        // DEBUG: Function to verify entrypoint storage for debugging
+        fn _debug_verify_entrypoint_storage(self: @ContractState, session_key: felt252, index: u32) -> felt252 {
+            self.session_entrypoints.read((session_key, index))
+        }
+
+        // DEBUG: Function to check entrypoint storage status
+        fn _debug_check_entrypoint_storage_status(self: @ContractState, session_key: felt252, index: u32) -> bool {
+            let entrypoint = self.session_entrypoints.read((session_key, index));
+            entrypoint != 0
+        }
+
+        // DEBUG: Function to validate session with detailed debugging
+        fn _debug_validate_session_for_calls(
+            ref self: ContractState,
+            session_key: felt252,
+            calls: Span<Call>
+        ) -> (bool, u64, u32, u32, u32) {
+            let session = self.session_keys.read(session_key);
+            
+            // Return validation result and debug info
+            let result = self._validate_session_for_calls(session_key, calls);
+            (result, session.valid_until, session.max_calls, session.calls_used, session.allowed_entrypoints_len)
         }
 
         // NEW: Pure session validation check (no mutations)
@@ -391,6 +521,7 @@ mod Account {
             self.session_keys.write(session_key, session);
         }
 
+
         /// Validate session for multiple calls
         fn _validate_session_for_calls(
             ref self: ContractState,
@@ -414,8 +545,10 @@ mod Account {
                 return false;
             }
 
-            // If no entrypoints specified, allow all
+            // CRITICAL FIX: If no entrypoints specified, allow all
+            // This is the main fix for the bug you described
             if session.allowed_entrypoints_len == 0 {
+                // Increment calls used and save session data
                 session.calls_used += 1;
                 self.session_keys.write(session_key, session);
                 return true;
