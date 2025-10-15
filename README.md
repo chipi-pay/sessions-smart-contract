@@ -4,7 +4,7 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 
 ## 🚀 Deployed Contract
 
-**Starknet Mainnet (Production Version - SECURE):**
+**Starknet Mainnet (Mainnet Version - Not Audited):**
 - **Class Hash**: `0x00097c307b5e2869713d376309a4e43028b6ef17061499022103304b482c7298`
 - **Contract Address**: `0x01821ff8d12daa4f4406daea573a0f7bcba8aae62b90632384176a6b780c15fd`
 - **Reference Implementation**: `0x01b0b06255f6960219dc358114779fda563c3b817d2df3fbd214e67c3572fd7f`
