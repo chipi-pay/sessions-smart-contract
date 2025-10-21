@@ -25,6 +25,7 @@ pub trait ISessionKeyManager<TContractState> {
 mod Account {
     use super::SessionData;
     use openzeppelin::account::AccountComponent;
+    // SRC9Component for SNIP-9 compatibility
     use openzeppelin::account::extensions::SRC9Component;
     use openzeppelin::introspection::src5::SRC5Component;
     use openzeppelin::upgrades::interface::IUpgradeable;
@@ -47,20 +48,26 @@ mod Account {
     component!(path: SRC9Component, storage: src9, event: SRC9Event);
     component!(path: UpgradeableComponent, storage: upgradeable, event: UpgradeableEvent);
 
-    // Use AccountMixin WITHOUT __validate__ (we'll implement it manually)
     #[abi(embed_v0)]
     impl PublicKeyImpl = AccountComponent::PublicKeyImpl<ContractState>;
     #[abi(embed_v0)]
     impl PublicKeyCamelImpl = AccountComponent::PublicKeyCamelImpl<ContractState>;
     impl AccountInternalImpl = AccountComponent::InternalImpl<ContractState>;
+    // DO NOT embed AccountComponent::SRC6Impl - we implement our own __validate__
+// DO NOT embed SRC9Component::SRC6Impl - we implement our own __validate__
 
     // Upgradeable
     impl UpgradeableInternalImpl = UpgradeableComponent::InternalImpl<ContractState>;
 
-    // SRC9 (Outside Execution) - Embed the OutsideExecutionV2 implementation
+    // SRC9 (Outside Execution) - Embed ONLY the OutsideExecutionV2 implementation
+    // NOTE: We do NOT embed the SRC9Component's __validate__ implementation
+    // because we have our own custom __validate__ that handles both owner and session signatures
     #[abi(embed_v0)]
     impl OutsideExecutionV2Impl = SRC9Component::OutsideExecutionV2Impl<ContractState>;
     impl SRC9InternalImpl = SRC9Component::InternalImpl<ContractState>;
+    
+    // CRITICAL: We do NOT embed SRC9Component::SRC6Impl because it would override our custom __validate__
+    // We only use the SRC9Component for outside execution functionality, not validation
 
     #[storage]
     struct Storage {
@@ -89,6 +96,7 @@ mod Account {
         UpgradeableEvent: UpgradeableComponent::Event,
         SessionKeyAdded: SessionKeyAdded,
         SessionKeyRevoked: SessionKeyRevoked,
+        DebugEvent: DebugEvent,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -105,11 +113,18 @@ mod Account {
         session_key: felt252,
     }
 
+    #[derive(Drop, starknet::Event)]
+    struct DebugEvent {
+        #[key]
+        message: felt252,
+    }
+
     #[constructor]
     fn constructor(ref self: ContractState, public_key: felt252) {
-        self.account.initializer(public_key);
+            self.account.initializer(public_key);
         self.src9.initializer();
     }
+
 
     // Manually implement SRC-6 interface with custom __validate__
     #[abi(per_item)]
@@ -120,6 +135,20 @@ mod Account {
             let tx_info = get_tx_info().unbox();
             let signature = tx_info.signature;
             let caller = get_caller_address();
+            let version = tx_info.version;
+
+            // Debug: Emit signature length and version
+            self.emit(DebugEvent { message: 'sig_len' });
+            self.emit(DebugEvent { message: signature.len().into() });
+            self.emit(DebugEvent { message: 'version' });
+            self.emit(DebugEvent { message: version });
+
+            // For version 1 transactions (Paymaster/SNIP-9), always delegate to AccountComponent
+            // This ensures Paymaster compatibility
+            if version == 1 {
+                self.emit(DebugEvent { message: 'v1_paymaster_path' });
+                return self.account.validate_transaction();
+            }
 
             // Self-calls routed via __execute__ carry no tx signature
             // SECURITY: Only allow empty signatures if caller is the account itself
@@ -132,35 +161,56 @@ mod Account {
                 }
             }
 
-            // Owner path: 2-elt signature → delegate to OZ (handles tx v3 hashing)
+            // Owner path: 2-elt signature → delegate to OZ (handles tx v1 and v3 hashing)
             if signature.len() == 2 {
+                self.emit(DebugEvent { message: 'owner_path' });
+                // Use AccountComponent's validate function for owner signatures
+                // This should handle both v1 (Paymaster) and v3 (standard) transactions
                 return self.account.validate_transaction();
             }
 
             // Session path: 4-elt signature [session_pubkey, r, s, valid_until]
+            // Works with both v1 (Paymaster) and v3 (standard) transactions
             if signature.len() == 4 {
+                self.emit(DebugEvent { message: 'session_path' });
                 let session_pubkey = *signature.at(0);
                 let r = *signature.at(1);
                 let s = *signature.at(2);
                 let valid_until: u64 = (*signature.at(3)).try_into().unwrap();
 
+                // Debug: Check timestamp
                 if get_block_timestamp() > valid_until {
+                    // Debug: Emit event for timestamp failure
+                    self.emit(DebugEvent { message: 'timestamp_failed' });
                     return 0;
                 }
-                // Use pure check first (no mutations)
+                
+                // Debug: Check session permissions
                 if !self._is_session_allowed_for_calls(session_pubkey, calls.span()) {
+                    // Debug: Emit event for permission failure
+                    self.emit(DebugEvent { message: 'permission_failed' });
                     return 0;
                 }
 
                 // Match the front-end's poseidon message layout
                 let msg_hash = self._session_message_hash(calls.span(), valid_until);
+                
+                // Debug: Check signature
                 if check_ecdsa_signature(msg_hash, session_pubkey, r, s) {
                     // Only increment counter after valid signature
                     self._consume_session_call(session_pubkey);
+                    // Debug: Emit event for success
+                    self.emit(DebugEvent { message: 'signature_valid' });
                     return starknet::VALIDATED;
+                } else {
+                    // Debug: Emit event for signature failure
+                    self.emit(DebugEvent { message: 'signature_failed' });
+                    return 0;
                 }
             }
 
+            // If we reach here, validation failed
+            self.emit(DebugEvent { message: 'validation_failed' });
             0
         }
 
