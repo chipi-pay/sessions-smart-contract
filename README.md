@@ -4,6 +4,7 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 
 ## 🚀 Deployed Contract
 
+
 **Starknet Mainnet (Production Version v23 - SNIP-9 Compatible):**
 - **Class Hash**: `0x00cd7618e5f407ad85458398815cf47dd63f06cd5249733e2bf987d13823f2e9`
 - **Transaction Hash**: `0x03a69f9011522c301159ee6c8ecbe54c85536882581dce87f46ab5516fd81a00`
