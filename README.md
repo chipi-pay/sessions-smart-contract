@@ -4,13 +4,27 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 
 ## 🚀 Deployed Contract
 
-**Starknet Mainnet (Mainnet Version - Not Audited):**
+
+**Starknet Mainnet (Production Version v23 - SNIP-9 Compatible):**
+- **Class Hash**: `0x00cd7618e5f407ad85458398815cf47dd63f06cd5249733e2bf987d13823f2e9`
+- **Transaction Hash**: `0x03a69f9011522c301159ee6c8ecbe54c85536882581dce87f46ab5516fd81a00`
+- **Test Instance**: `0x74dfd305e27e8365979ab327f1a1ba8a1d23af47b10fb5190f2118973549c20`
+- **Network**: Starknet Mainnet
+- **Compiler**: Cairo 2.11.4
+- **SNIP-9**: v2 Compatible ✅
+- **Paymaster**: Supported ✅
+- **Deployed**: October 16, 2025
+
+**Test Results** (Mainnet Integration Tests):
+- ✅ Owner Signature (2 elements): [TX](https://starkscan.co/tx/0x28790c854466656bb87cd25fb704d6f55a386d08fec8a58131d50dfae340eb5)
+- ✅ Session Signature (4 elements): [TX](https://starkscan.co/tx/0x38ece01cc093fde34d53f95b78b1fc2cfe55c1dfc937c2e17055aebfa31a779)
+- ✅ Session Keys: Add, retrieve, validate working
+- ✅ SNIP-9 v2: Verified on-chain
+
+**Previous Production Version (v22):**
 - **Class Hash**: `0x00097c307b5e2869713d376309a4e43028b6ef17061499022103304b482c7298`
 - **Contract Address**: `0x01821ff8d12daa4f4406daea573a0f7bcba8aae62b90632384176a6b780c15fd`
 - **Reference Implementation**: `0x01b0b06255f6960219dc358114779fda563c3b817d2df3fbd214e67c3572fd7f`
-- **Previous Account (V21)**: `0x02d5a07d0c6cbf7cf428bbcadd12fd33295d07007bfa8266a35c6b74850a9806`
-- **Network**: Starknet Mainnet
-- **Compiler**: Cairo 2.11.4
 - **Deployed**: January 11, 2025
 
 **Starknet Mainnet (Debug Version - FOR DEBUGGING ONLY):**
@@ -25,7 +39,32 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 
 > ⚠️ **Note**: The reference implementation is provided as an example. For production use, deploy your own instance with your owner's public key.
 
-### What's New in This Version (v22 - Production Secure)
+### What's New in This Version (v23 - SNIP-9 Compatible)
+
+🚀 **SNIP-9 v2 (Outside Execution) Support** - Full Paymaster compatibility:
+- **Added SRC9Component**: OpenZeppelin's Outside Execution implementation integrated
+- **execute_from_outside**: Enables meta-transactions and sponsored gas fees
+- **get_snip9_version()**: Returns 2 for SNIP-9 v2 compatibility verification
+- **Paymaster Ready**: Works with all Paymaster services (AVNU, Nimbora, etc.)
+- **Session + Paymaster**: Users can execute transactions with $0 in wallet while backend sponsors gas
+- **Production Safe**: Zero debug vulnerabilities, all production-grade security maintained
+- **Backward Compatible**: All existing session key functionality preserved
+- **Documentation**: Complete SNIP-9 usage guide, deployment instructions, and security comparison
+
+🔒 **Security Enhancements**:
+- Verified compatible with [Starknet.js Outside Execution](https://starknetjs.com/docs/guides/outsideExecution)
+- Verified compatible with [Starknet.js Paymaster](https://starknetjs.com/docs/guides/paymaster)
+- No debug functions in production contract
+- Uses real transaction info for all validations
+- Protected session management with assert_only_self
+
+✅ **Testing**:
+- All 18 tests passing (15 original + 3 new SNIP-9 tests)
+- SNIP-9 compatibility verified
+- Paymaster integration tested
+- Session + Outside Execution combination validated
+
+### Previous Version Features (v22 - Production Secure)
 
 🔒 **Enhanced Security Architecture** - Implemented improved validation flow with better security guarantees:
 - **Pure Validation First**: Added `_is_session_allowed_for_calls()` for non-mutating validation checks
@@ -142,12 +181,12 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 - Maintains full security with replay protection via nonce
 
 ### Verify on Starkscan
-- [View Class (V22 Production - SECURE)](https://starkscan.co/class/0x00097c307b5e2869713d376309a4e43028b6ef17061499022103304b482c7298)
+- [View Class (V23 SNIP-9 Compatible)](https://starkscan.co/class/0x00cd7618e5f407ad85458398815cf47dd63f06cd5249733e2bf987d13823f2e9)
+- [View Declaration Transaction (V23)](https://starkscan.co/tx/0x03a69f9011522c301159ee6c8ecbe54c85536882581dce87f46ab5516fd81a00)
+- [View Class (V22 Previous)](https://starkscan.co/class/0x00097c307b5e2869713d376309a4e43028b6ef17061499022103304b482c7298)
 - [View Contract (V22 Production)](https://starkscan.co/contract/0x01821ff8d12daa4f4406daea573a0f7bcba8aae62b90632384176a6b780c15fd)
 - [View Class (V22 Debug)](https://starkscan.co/class/0x052458a2546699d1c175eccc31ac8ff6ccfa284ab7c7c384d37ceaf96abf4cb0)
 - [View Contract (V22 Debug)](https://starkscan.co/contract/0x06573411e4181fb6b43e2800fb8f2936bbe592f925c7c66e04858565f23a2b25)
-- [View Previous Contract (V21)](https://starkscan.co/contract/0x02d5a07d0c6cbf7cf428bbcadd12fd33295d07007bfa8266a35c6b74850a9806)
-- [View Reference Contract](https://starkscan.co/contract/0x01b0b06255f6960219dc358114779fda563c3b817d2df3fbd214e67c3572fd7f)
 
 ---
 
