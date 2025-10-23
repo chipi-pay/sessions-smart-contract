@@ -5,15 +5,16 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 ## 🚀 Deployed Contract
 
 
-**Starknet Mainnet (Production Version v23 - SNIP-9 Compatible):**
-- **Class Hash**: `0x00cd7618e5f407ad85458398815cf47dd63f06cd5249733e2bf987d13823f2e9`
-- **Transaction Hash**: `0x03a69f9011522c301159ee6c8ecbe54c85536882581dce87f46ab5516fd81a00`
-- **Test Instance**: `0x74dfd305e27e8365979ab327f1a1ba8a1d23af47b10fb5190f2118973549c20`
+**Starknet Mainnet (Production Version v24 - Paymaster Compatible):**
+- **Class Hash**: `0x70d88aa45b47d09d07ea1aa2ca975bcee78cbd2989d9fe4d28d559fc1e2931b`
+- **Transaction Hash**: `0x1be122ceee31ca754a9d72b3207f4a8d43df997ebb63210ae6c0d54e52bcb6a`
+- **Test Instance**: `0x04a21453a21ca4f05e7eeb0ae7ff00cad152a20da05f6eba6361ce5d00f89ada`
 - **Network**: Starknet Mainnet
 - **Compiler**: Cairo 2.11.4
 - **SNIP-9**: v2 Compatible ✅
 - **Paymaster**: Supported ✅
-- **Deployed**: October 16, 2025
+- **Interface Detection**: SRC-5 Compatible ✅
+- **Deployed**: January 16, 2025
 
 **Test Results** (Mainnet Integration Tests):
 - ✅ Owner Signature (2 elements): [TX](https://starkscan.co/tx/0x28790c854466656bb87cd25fb704d6f55a386d08fec8a58131d50dfae340eb5)
@@ -28,28 +29,33 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 - **Deployed**: January 11, 2025
 
 **Starknet Mainnet (Debug Version - FOR DEBUGGING ONLY):**
-- **Class Hash**: `0x052458a2546699d1c175eccc31ac8ff6ccfa284ab7c7c384d37ceaf96abf4cb0`
-- **Contract Address**: `0x06573411e4181fb6b43e2800fb8f2936bbe592f925c7c66e04858565f23a2b25`
+- **Class Hash**: `0x01381269dff5b8af6700f37d972bc9c0a6cf3ee073ba99fff11495d18bcb8a1c`
+- **Transaction Hash**: `0x13419dd6a1d24671833ee3c09226f2cae6f55d5ef09fb765e0cc6c39965a2e8`
+- **Contract Address**: `0x0255c9db3dfe43f50ef523b1b3c4ce9a45b622540cfcda93501a5fe2da97752e`
 - **Network**: Starknet Mainnet
 - **Compiler**: Cairo 2.11.4
-- **Deployed**: January 11, 2025
-- **Source**: `src/debug_account.cairo` (separate from main production contract)
+- **SNIP-9**: v2 Compatible ✅
+- **Paymaster**: Supported ✅
+- **Interface Detection**: SRC-5 Compatible ✅
+- **Deployed**: January 16, 2025
+- **Source**: `src/debug_account_contract.cairo` (separate from main production contract)
 
 > ⚠️ **CRITICAL WARNING**: The debug version contains `compute_session_message_hash_offchain` and `debug_validate_session_signature` functions that allow forced nonce and chain_id parameters. **DO NOT USE IN PRODUCTION** as this creates serious security vulnerabilities including replay attacks and cross-chain replay attacks. Use only for debugging and testing purposes.
 
 > ⚠️ **Note**: The reference implementation is provided as an example. For production use, deploy your own instance with your owner's public key.
 
-### What's New in This Version (v23 - SNIP-9 Compatible)
+### What's New in This Version (v24 - Paymaster Compatible)
 
-🚀 **SNIP-9 v2 (Outside Execution) Support** - Full Paymaster compatibility:
-- **Added SRC9Component**: OpenZeppelin's Outside Execution implementation integrated
-- **execute_from_outside**: Enables meta-transactions and sponsored gas fees
-- **get_snip9_version()**: Returns 2 for SNIP-9 v2 compatibility verification
+🚀 **Full Paymaster Integration** - Complete Paymaster ecosystem compatibility:
+- **Added SRC5Component**: Interface detection support for Paymaster compatibility
+- **supports_interface()**: Enables Paymasters to detect account capabilities
+- **SNIP-9 v2 Support**: Full Outside Execution compatibility maintained
 - **Paymaster Ready**: Works with all Paymaster services (AVNU, Nimbora, etc.)
 - **Session + Paymaster**: Users can execute transactions with $0 in wallet while backend sponsors gas
+- **Interface Detection**: SRC-5 compliant for enhanced discoverability
 - **Production Safe**: Zero debug vulnerabilities, all production-grade security maintained
 - **Backward Compatible**: All existing session key functionality preserved
-- **Documentation**: Complete SNIP-9 usage guide, deployment instructions, and security comparison
+- **Enhanced Compatibility**: Both main and debug versions fully Paymaster-compatible
 
 🔒 **Security Enhancements**:
 - Verified compatible with [Starknet.js Outside Execution](https://starknetjs.com/docs/guides/outsideExecution)
@@ -181,12 +187,13 @@ A Cairo smart contract that extends OpenZeppelin's account standard with session
 - Maintains full security with replay protection via nonce
 
 ### Verify on Starkscan
-- [View Class (V23 SNIP-9 Compatible)](https://starkscan.co/class/0x00cd7618e5f407ad85458398815cf47dd63f06cd5249733e2bf987d13823f2e9)
-- [View Declaration Transaction (V23)](https://starkscan.co/tx/0x03a69f9011522c301159ee6c8ecbe54c85536882581dce87f46ab5516fd81a00)
+- [View Class (V24 Paymaster Compatible)](https://starkscan.co/class/0x70d88aa45b47d09d07ea1aa2ca975bcee78cbd2989d9fe4d28d559fc1e2931b)
+- [View Declaration Transaction (V24)](https://starkscan.co/tx/0x1be122ceee31ca754a9d72b3207f4a8d43df997ebb63210ae6c0d54e52bcb6a)
+- [View Contract (V24 Production)](https://starkscan.co/contract/0x04a21453a21ca4f05e7eeb0ae7ff00cad152a20da05f6eba6361ce5d00f89ada)
+- [View Class (V24 Debug)](https://starkscan.co/class/0x01381269dff5b8af6700f37d972bc9c0a6cf3ee073ba99fff11495d18bcb8a1c)
+- [View Contract (V24 Debug)](https://starkscan.co/contract/0x0255c9db3dfe43f50ef523b1b3c4ce9a45b622540cfcda93501a5fe2da97752e)
+- [View Class (V23 Previous)](https://starkscan.co/class/0x00cd7618e5f407ad85458398815cf47dd63f06cd5249733e2bf987d13823f2e9)
 - [View Class (V22 Previous)](https://starkscan.co/class/0x00097c307b5e2869713d376309a4e43028b6ef17061499022103304b482c7298)
-- [View Contract (V22 Production)](https://starkscan.co/contract/0x01821ff8d12daa4f4406daea573a0f7bcba8aae62b90632384176a6b780c15fd)
-- [View Class (V22 Debug)](https://starkscan.co/class/0x052458a2546699d1c175eccc31ac8ff6ccfa284ab7c7c384d37ceaf96abf4cb0)
-- [View Contract (V22 Debug)](https://starkscan.co/contract/0x06573411e4181fb6b43e2800fb8f2936bbe592f925c7c66e04858565f23a2b25)
 
 ---
 

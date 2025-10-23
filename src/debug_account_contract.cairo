@@ -1,3 +1,6 @@
+// Debug Account Contract - FOR DEBUGGING ONLY
+// This is a separate contract file for the debug version
+
 // Session Data struct - exposed for tests
 #[derive(Drop, Copy, Serde, starknet::Store)]
 pub struct SessionData {
@@ -22,7 +25,7 @@ pub trait ISessionKeyManager<TContractState> {
 }
 
 #[starknet::contract(account)]
-mod Account {
+mod DebugAccount {
     use super::SessionData;
     use openzeppelin::account::AccountComponent;
     use openzeppelin::account::extensions::SRC9Component;
@@ -52,6 +55,8 @@ mod Account {
     impl PublicKeyImpl = AccountComponent::PublicKeyImpl<ContractState>;
     #[abi(embed_v0)]
     impl PublicKeyCamelImpl = AccountComponent::PublicKeyCamelImpl<ContractState>;
+    #[abi(embed_v0)]
+    impl SRC5Impl = SRC5Component::SRC5Impl<ContractState>;
     impl AccountInternalImpl = AccountComponent::InternalImpl<ContractState>;
 
     // Upgradeable
@@ -218,7 +223,7 @@ mod Account {
         }
     }
 
-    // Session key management with external entry points - v22 (Enhanced Debugging & ERC-1271)
+    // Session key management with external entry points - v23 (Debug Version with Paymaster Support)
     impl SessionKeyManagerImpl of super::ISessionKeyManager<ContractState> {
         fn add_or_update_session_key(
             ref self: ContractState,
@@ -365,7 +370,7 @@ mod Account {
         self._load_entrypoint(session_key, index)
     }
 
-    // ── 1) Offchain hash with forced nonce/chain_id ────────────────────────────────
+    // ── DEBUG FUNCTIONS (SECURITY RISK - FOR DEBUGGING ONLY) ────────────────────────────────
     #[external(v0)]
     fn compute_session_message_hash_offchain(
         self: @ContractState,
@@ -399,7 +404,6 @@ mod Account {
         core::poseidon::poseidon_hash_span(hash_data.span())
     }
 
-    // ── 2) Full dry-run: recompute + verify signature (no storage change) ─────────
     #[external(v0)]
     fn debug_validate_session_signature(
         self: @ContractState,
@@ -439,7 +443,6 @@ mod Account {
         (msg_hash, ok)
     }
 
-
     #[generate_trait]
     impl InternalImpl of InternalTrait {
         fn _store_entrypoint(ref self: ContractState, session_key: felt252, index: u32, entrypoint: felt252) {
@@ -450,54 +453,6 @@ mod Account {
         fn _load_entrypoint(self: @ContractState, session_key: felt252, index: u32) -> felt252 {
             // FIXED: Properly load entrypoint from storage
             self.session_entrypoints.read((session_key, index))
-        }
-
-        // DEBUG: Function to verify entrypoint storage
-        fn _debug_entrypoint_storage(self: @ContractState, session_key: felt252, index: u32) -> felt252 {
-            self.session_entrypoints.read((session_key, index))
-        }
-
-        // DEBUG: Function to get session data for debugging
-        fn _debug_get_session_data(self: @ContractState, session_key: felt252) -> SessionData {
-            self.session_keys.read(session_key)
-        }
-
-        // DEBUG: Function to check if session exists
-        fn _debug_session_exists(self: @ContractState, session_key: felt252) -> bool {
-            let session = self.session_keys.read(session_key);
-            session.valid_until > 0
-        }
-
-        // DEBUG: Function to get all session data
-        fn _debug_get_all_session_data(self: @ContractState, session_key: felt252) -> (SessionData, felt252, felt252) {
-            let session = self.session_keys.read(session_key);
-            let entrypoint_0 = self.session_entrypoints.read((session_key, 0));
-            let entrypoint_1 = self.session_entrypoints.read((session_key, 1));
-            (session, entrypoint_0, entrypoint_1)
-        }
-
-        // DEBUG: Function to verify entrypoint storage for debugging
-        fn _debug_verify_entrypoint_storage(self: @ContractState, session_key: felt252, index: u32) -> felt252 {
-            self.session_entrypoints.read((session_key, index))
-        }
-
-        // DEBUG: Function to check entrypoint storage status
-        fn _debug_check_entrypoint_storage_status(self: @ContractState, session_key: felt252, index: u32) -> bool {
-            let entrypoint = self.session_entrypoints.read((session_key, index));
-            entrypoint != 0
-        }
-
-        // DEBUG: Function to validate session with detailed debugging
-        fn _debug_validate_session_for_calls(
-            ref self: ContractState,
-            session_key: felt252,
-            calls: Span<Call>
-        ) -> (bool, u64, u32, u32, u32) {
-            let session = self.session_keys.read(session_key);
-            
-            // Return validation result and debug info
-            let result = self._validate_session_for_calls(session_key, calls);
-            (result, session.valid_until, session.max_calls, session.calls_used, session.allowed_entrypoints_len)
         }
 
         // NEW: Pure session validation check (no mutations)
@@ -539,7 +494,6 @@ mod Account {
             session.calls_used += 1;
             self.session_keys.write(session_key, session);
         }
-
 
         /// Validate session for multiple calls
         fn _validate_session_for_calls(

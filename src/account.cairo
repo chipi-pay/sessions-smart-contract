@@ -52,6 +52,8 @@ mod Account {
     impl PublicKeyImpl = AccountComponent::PublicKeyImpl<ContractState>;
     #[abi(embed_v0)]
     impl PublicKeyCamelImpl = AccountComponent::PublicKeyCamelImpl<ContractState>;
+    #[abi(embed_v0)]
+    impl SRC5Impl = SRC5Component::SRC5Impl<ContractState>;
     impl AccountInternalImpl = AccountComponent::InternalImpl<ContractState>;
     // DO NOT embed AccountComponent::SRC6Impl - we implement our own __validate__
 // DO NOT embed SRC9Component::SRC6Impl - we implement our own __validate__
