@@ -7,3 +7,13 @@ account = "deployer_oz"
 accounts-file = "~/.starknet_accounts/starknet_open_zeppelin_accounts.json"
 url = "https://starknet-mainnet.infura.io/v3/2OXKaYz1Tj90DatgCJYKGIVrHvW"
 
+[sncast.sepolia]
+account = "deployer_oz"
+accounts-file = "~/.starknet_accounts/starknet_open_zeppelin_accounts.json"
+url = "https://starknet-sepolia.infura.io/v3/2OXKaYz1Tj90DatgCJYKGIVrHvW"
+
+[sncast.alpha-sepolia]
+account = "deployer_oz"
+accounts-file = "~/.starknet_accounts/starknet_open_zeppelin_accounts.json"
+url = "https://starknet-sepolia.infura.io/v3/2OXKaYz1Tj90DatgCJYKGIVrHvW"
+
