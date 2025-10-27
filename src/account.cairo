@@ -68,6 +68,15 @@ mod Account {
     impl OutsideExecutionV2Impl = SRC9Component::OutsideExecutionV2Impl<ContractState>;
     impl SRC9InternalImpl = SRC9Component::InternalImpl<ContractState>;
     
+    // Implement SRC9 hooks to allow outside execution to execute calls
+    // The SRC9Component needs to know how to execute calls - it doesn't call __execute__ automatically
+    impl SRC9HooksImpl of SRC9Component::SRC9HooksTrait<ContractState> {
+        fn _execute_calls(ref self: SRC9Component::ComponentState<ContractState>, mut calls: Array<Call>) -> Array<Span<felt252>> {
+            let mut contract_state = SRC9Component::HasComponent::get_contract_mut(ref self);
+            contract_state._execute_calls(calls)
+        }
+    }
+    
     // CRITICAL: We do NOT embed SRC9Component::SRC6Impl because it would override our custom __validate__
     // We only use the SRC9Component for outside execution functionality, not validation
 
