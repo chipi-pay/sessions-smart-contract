@@ -282,7 +282,6 @@ mod Account {
         }
     }
 
-
     // ========== SNIP-9 v2 INTEGRATION ==========
     // Implement required traits for OutsideExecutionComponent
     
@@ -403,8 +402,8 @@ mod Account {
     // Production-safe functions (no security vulnerabilities)
     #[external(v0)]
     fn get_contract_info(self: @ContractState) -> felt252 {
-        // Return a version identifier for production with SNIP-9 support
-        'v23_snip9_compatible'
+        // v27: Custom SNIP-9 v2 with official type hashes + paymaster compatible
+        'v27_custom_snip9v2'
     }
 
     // SNIP-9 version check - returns 2 for SNIP-9 v2 compatibility
