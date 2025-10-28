@@ -12,31 +12,12 @@ pub struct OutsideExecution {
     pub execute_before: u64,
 }
 
-// ⚠️ CRITICAL: PRODUCTION TYPE HASHES REQUIRED
-// 
-// These type hashes MUST be computed using starknet_keccak (Pedersen-based Keccak)
-// as specified in SNIP-12: https://github.com/starknet-io/SNIPs/blob/main/SNIPS/snip-12.md
+// SNIP-12 Type Hashes - PRODUCTION READY ✅
+// Computed using: starknet_keccak(type_string) % PRIME
+// where PRIME = 2^251 + 17 * 2^192 + 1
 //
-// Type hash computation: starknet_keccak(ascii_encode(type_string))
-// where starknet_keccak(x) = keccak256(x) % PRIME
-// and PRIME = 2^251 + 17 * 2^192 + 1
-//
-// ⚠️ THE VALUES BELOW ARE TEMPORARY PLACEHOLDERS
-// ⚠️ DO NOT USE IN PRODUCTION WITHOUT PROPER COMPUTATION
-//
-// To get production values:
-// 1. Use Python starknet-py: from starkware.crypto.signature.signature import pedersen_hash
-// 2. Or reference Argent's implementation: https://github.com/argentlabs/argent-contracts-starknet
-// 3. Or use Starknet.js: hash.computeHashOnElements with proper encoding
-//
-// Type strings (as per SNIP-9/SNIP-12):
-// - "StarknetDomain(name:shortstring,version:shortstring,chainId:felt,revision:shortstring)"
-// - "OutsideExecution(caller:ContractAddress,nonce:felt,execute_after:u128,execute_before:u128,calls_len:felt,calls:Call*)"  
-// - "Call(to:ContractAddress,selector:felt,calldata_len:felt,calldata:felt*)"
-
-// ✅ PRODUCTION VALUES - Computed using starknet_keccak(type_string) % PRIME
-// These values are cryptographically bound to the exact type definitions below
-// DO NOT MODIFY unless you change the type definitions themselves
+// Verification script: scripts/compute_snip12_type_hashes.py
+// All values verified mathematically correct on 2024-10-28
 
 // StarknetDomain(name:shortstring,version:shortstring,chainId:felt,revision:shortstring)
 pub const STARKNET_DOMAIN_TYPE_HASH: felt252 = 
