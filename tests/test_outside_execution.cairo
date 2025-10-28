@@ -4,30 +4,32 @@
 #[cfg(test)]
 mod test_outside_execution {
     use core::array::ArrayTrait;
-    use core::traits::TryInto;
     use starknet::account::Call;
     use starknet::ContractAddress;
     use starknet::contract_address_const;
-    use starknet::get_block_timestamp;
-    use starknet::testing::{set_caller_address, set_contract_address, set_block_timestamp};
     
-    // Import your account with outside execution
-    // Note: You'll need to update this import once you integrate into your account.cairo
+    // Use snforge_std_deprecated for testing utilities
+    use snforge_std_deprecated::{
+        declare, ContractClassTrait, DeclareResultTrait,
+        start_cheat_caller_address, stop_cheat_caller_address,
+        start_cheat_block_timestamp_global, stop_cheat_block_timestamp_global
+    };
+    
+    // Import outside execution types
     use sessions_smart_contract::outside_execution::{
         OutsideExecution, IOutsideExecutionDispatcher, IOutsideExecutionDispatcherTrait
     };
 
-    // Helper: Deploy a mock target contract for testing
-    fn deploy_mock_target() -> ContractAddress {
-        // Mock contract that we'll call via outside execution
-        contract_address_const::<'target'>()
+    // Helper: Deploy account with outside execution
+    fn deploy_account(owner_pubkey: felt252) -> ContractAddress {
+        let contract = declare("Account").unwrap().contract_class();
+        let (contract_address, _) = contract.deploy(@array![owner_pubkey]).unwrap();
+        contract_address
     }
 
-    // Helper: Deploy account with outside execution
-    fn deploy_account() -> ContractAddress {
-        // This would deploy your account_with_outside_execution
-        // For now, returning a mock address
-        contract_address_const::<'account'>()
+    // Mock owner public key for testing
+    fn owner_pubkey() -> felt252 {
+        0x1234567890abcdef
     }
 
     // Helper: Get test addresses
@@ -46,11 +48,11 @@ mod test_outside_execution {
     #[test]
     fn test_execute_from_outside_owner_signature() {
         // Setup
-        let account = deploy_account();
-        let target = deploy_mock_target();
         let current_time = 1000_u64;
-        set_block_timestamp(current_time);
-        set_contract_address(account);
+        start_cheat_block_timestamp_global(current_time);
+        
+        let account = deploy_account(owner_pubkey());
+        let target = contract_address_const::<'target'>();
 
         // Create outside execution
         let outside_execution = OutsideExecution {
@@ -86,12 +88,12 @@ mod test_outside_execution {
     #[test]
     fn test_execute_from_outside_session_signature() {
         // Setup
-        let account = deploy_account();
-        let target = deploy_mock_target();
         let current_time = 1000_u64;
         let valid_until = current_time + 86400; // 24h
-        set_block_timestamp(current_time);
-        set_contract_address(account);
+        start_cheat_block_timestamp_global(current_time);
+        
+        let account = deploy_account(owner_pubkey());
+        let target = contract_address_const::<'target'>();
 
         // Add session key first (would need to call add_or_update_session_key)
         // ... (mock this)
@@ -137,11 +139,11 @@ mod test_outside_execution {
     #[should_panic(expected: ('OE: Nonce already used',))]
     fn test_nonce_replay_prevention() {
         // Setup
-        let account = deploy_account();
-        let target = deploy_mock_target();
         let current_time = 1000_u64;
-        set_block_timestamp(current_time);
-        set_contract_address(account);
+        start_cheat_block_timestamp_global(current_time);
+        
+        let account = deploy_account(owner_pubkey());
+        let target = contract_address_const::<'target'>();
 
         // Create outside execution
         let outside_execution = OutsideExecution {
@@ -182,11 +184,11 @@ mod test_outside_execution {
     #[should_panic(expected: ('OE: Invalid timestamp',))]
     fn test_execute_after_validation() {
         // Setup
-        let account = deploy_account();
-        let target = deploy_mock_target();
         let current_time = 1000_u64;
-        set_block_timestamp(current_time);
-        set_contract_address(account);
+        start_cheat_block_timestamp_global(current_time);
+        
+        let account = deploy_account(owner_pubkey());
+        let target = contract_address_const::<'target'>();
 
         // Create outside execution with execute_after in the future
         let outside_execution = OutsideExecution {
@@ -213,11 +215,11 @@ mod test_outside_execution {
     #[should_panic(expected: ('OE: Invalid timestamp',))]
     fn test_execute_before_validation() {
         // Setup
-        let account = deploy_account();
-        let target = deploy_mock_target();
         let current_time = 1000_u64;
-        set_block_timestamp(current_time);
-        set_contract_address(account);
+        start_cheat_block_timestamp_global(current_time);
+        
+        let account = deploy_account(owner_pubkey());
+        let target = contract_address_const::<'target'>();
 
         // Create outside execution with execute_before in the past
         let outside_execution = OutsideExecution {
@@ -244,17 +246,17 @@ mod test_outside_execution {
     #[should_panic(expected: ('OE: Invalid caller',))]
     fn test_caller_restriction() {
         // Setup
-        let account = deploy_account();
-        let target = deploy_mock_target();
         let current_time = 1000_u64;
         let trusted_executor = contract_address_const::<'trusted'>();
         let untrusted_executor = contract_address_const::<'untrusted'>();
         
-        set_block_timestamp(current_time);
-        set_contract_address(account);
+        start_cheat_block_timestamp_global(current_time);
+        
+        let account = deploy_account(owner_pubkey());
+        let target = contract_address_const::<'target'>();
         
         // Set actual caller to untrusted
-        set_caller_address(untrusted_executor);
+        start_cheat_caller_address(account, untrusted_executor);
 
         // Create outside execution restricted to trusted_executor only
         let outside_execution = OutsideExecution {
@@ -280,14 +282,15 @@ mod test_outside_execution {
     #[test]
     fn test_unrestricted_caller() {
         // Setup
-        let account = deploy_account();
-        let target = deploy_mock_target();
         let current_time = 1000_u64;
         let random_executor = contract_address_const::<'random'>();
         
-        set_block_timestamp(current_time);
-        set_contract_address(account);
-        set_caller_address(random_executor);
+        start_cheat_block_timestamp_global(current_time);
+        
+        let account = deploy_account(owner_pubkey());
+        let target = contract_address_const::<'target'>();
+        
+        start_cheat_caller_address(account, random_executor);
 
         // Create outside execution with ANY_CALLER (0x0)
         let outside_execution = OutsideExecution {
@@ -320,12 +323,12 @@ mod test_outside_execution {
     #[test]
     fn test_multiple_calls() {
         // Setup
-        let account = deploy_account();
+        let current_time = 1000_u64;
+        start_cheat_block_timestamp_global(current_time);
+        
+        let account = deploy_account(owner_pubkey());
         let target1 = contract_address_const::<'target1'>();
         let target2 = contract_address_const::<'target2'>();
-        let current_time = 1000_u64;
-        set_block_timestamp(current_time);
-        set_contract_address(account);
 
         // Create outside execution
         let outside_execution = OutsideExecution {
@@ -364,7 +367,7 @@ mod test_outside_execution {
     #[test]
     fn test_nonce_validity_check() {
         // Setup
-        let account = deploy_account();
+        let account = deploy_account(owner_pubkey());
         let dispatcher = IOutsideExecutionDispatcher { contract_address: account };
 
         // Fresh nonce should be valid
@@ -377,10 +380,11 @@ mod test_outside_execution {
     #[test]
     fn test_message_hash_computation() {
         // Setup
-        let account = deploy_account();
-        let target = deploy_mock_target();
         let current_time = 1000_u64;
-        set_block_timestamp(current_time);
+        start_cheat_block_timestamp_global(current_time);
+        
+        let account = deploy_account(owner_pubkey());
+        let target = contract_address_const::<'target'>();
 
         // Create outside execution
         let outside_execution = OutsideExecution {
@@ -412,11 +416,11 @@ mod test_outside_execution {
     #[should_panic(expected: ('OE: Invalid signature',))]
     fn test_invalid_signature() {
         // Setup
-        let account = deploy_account();
-        let target = deploy_mock_target();
         let current_time = 1000_u64;
-        set_block_timestamp(current_time);
-        set_contract_address(account);
+        start_cheat_block_timestamp_global(current_time);
+        
+        let account = deploy_account(owner_pubkey());
+        let target = contract_address_const::<'target'>();
 
         // Create outside execution
         let outside_execution = OutsideExecution {
@@ -443,12 +447,12 @@ mod test_outside_execution {
     #[test]
     fn test_session_with_entrypoint_restrictions() {
         // Test that session key can only call allowed entrypoints via outside execution
-        let account = deploy_account();
-        let target = deploy_mock_target();
         let current_time = 1000_u64;
         let valid_until = current_time + 86400;
-        set_block_timestamp(current_time);
-        set_contract_address(account);
+        start_cheat_block_timestamp_global(current_time);
+        
+        let account = deploy_account(owner_pubkey());
+        let target = contract_address_const::<'target'>();
 
         // Add session key with entrypoint restriction (mock)
         // Session only allows 'transfer' selector
@@ -482,12 +486,12 @@ mod test_outside_execution {
     #[should_panic(expected: ('OE: Invalid signature',))]
     fn test_session_with_restricted_entrypoint_fails() {
         // Test that session key cannot call non-allowed entrypoints
-        let account = deploy_account();
-        let target = deploy_mock_target();
         let current_time = 1000_u64;
         let valid_until = current_time + 86400;
-        set_block_timestamp(current_time);
-        set_contract_address(account);
+        start_cheat_block_timestamp_global(current_time);
+        
+        let account = deploy_account(owner_pubkey());
+        let target = contract_address_const::<'target'>();
 
         // Session only allows 'transfer' selector (mock)
 
@@ -517,11 +521,12 @@ mod test_outside_execution {
     #[test]
     fn test_session_call_limit() {
         // Test that session key respects max_calls limit
-        let account = deploy_account();
-        let target = deploy_mock_target();
         let current_time = 1000_u64;
         let valid_until = current_time + 86400;
-        set_block_timestamp(current_time);
+        start_cheat_block_timestamp_global(current_time);
+        
+        let account = deploy_account(owner_pubkey());
+        let target = contract_address_const::<'target'>();
 
         // Add session with max_calls = 2 (mock)
 
@@ -529,7 +534,6 @@ mod test_outside_execution {
         let dispatcher = IOutsideExecutionDispatcher { contract_address: account };
 
         // First call - should succeed
-        set_contract_address(account);
         let outside_execution1 = OutsideExecution {
             caller: contract_address_const::<0>(),
             nonce: 13,
