@@ -21,12 +21,11 @@ pub trait ISessionKeyManager<TContractState> {
     fn get_session_data(self: @TContractState, session_key: felt252) -> SessionData;
 }
 
+
 #[starknet::contract(account)]
 mod Account {
     use super::SessionData;
     use openzeppelin::account::AccountComponent;
-    // SRC9Component for SNIP-9 compatibility
-    use openzeppelin::account::extensions::SRC9Component;
     use openzeppelin::introspection::src5::SRC5Component;
     use openzeppelin::upgrades::interface::IUpgradeable;
     use openzeppelin::upgrades::UpgradeableComponent;
@@ -42,11 +41,14 @@ mod Account {
     use core::array::ArrayTrait;
     use core::array::SpanTrait;
     use core::traits::Into;
+    
+    // Custom SNIP-9 v2 implementation with production-ready type hashes
+    use sessions_smart_contract::outside_execution::OutsideExecutionComponent;
 
     component!(path: AccountComponent, storage: account, event: AccountEvent);
     component!(path: SRC5Component, storage: src5, event: SRC5Event);
-    component!(path: SRC9Component, storage: src9, event: SRC9Event);
     component!(path: UpgradeableComponent, storage: upgradeable, event: UpgradeableEvent);
+    component!(path: OutsideExecutionComponent, storage: outside_execution, event: OutsideExecutionEvent);
 
     #[abi(embed_v0)]
     impl PublicKeyImpl = AccountComponent::PublicKeyImpl<ContractState>;
@@ -54,22 +56,17 @@ mod Account {
     impl PublicKeyCamelImpl = AccountComponent::PublicKeyCamelImpl<ContractState>;
     #[abi(embed_v0)]
     impl SRC5Impl = SRC5Component::SRC5Impl<ContractState>;
+    impl SRC5InternalImpl = SRC5Component::InternalImpl<ContractState>;
     impl AccountInternalImpl = AccountComponent::InternalImpl<ContractState>;
     // DO NOT embed AccountComponent::SRC6Impl - we implement our own __validate__
-// DO NOT embed SRC9Component::SRC6Impl - we implement our own __validate__
 
     // Upgradeable
     impl UpgradeableInternalImpl = UpgradeableComponent::InternalImpl<ContractState>;
 
-    // SRC9 (Outside Execution) - Embed ONLY the OutsideExecutionV2 implementation
-    // NOTE: We do NOT embed the SRC9Component's __validate__ implementation
-    // because we have our own custom __validate__ that handles both owner and session signatures
+    // Custom SNIP-9 v2 Outside Execution (with production type hashes)
+    impl OutsideExecutionInternalImpl = OutsideExecutionComponent::InternalImpl<ContractState>;
     #[abi(embed_v0)]
-    impl OutsideExecutionV2Impl = SRC9Component::OutsideExecutionV2Impl<ContractState>;
-    impl SRC9InternalImpl = SRC9Component::InternalImpl<ContractState>;
-    
-    // CRITICAL: We do NOT embed SRC9Component::SRC6Impl because it would override our custom __validate__
-    // We only use the SRC9Component for outside execution functionality, not validation
+    impl OutsideExecutionImpl = OutsideExecutionComponent::OutsideExecutionImpl<ContractState>;
 
     #[storage]
     struct Storage {
@@ -78,9 +75,9 @@ mod Account {
         #[substorage(v0)]
         src5: SRC5Component::Storage,
         #[substorage(v0)]
-        src9: SRC9Component::Storage,
-        #[substorage(v0)]
         upgradeable: UpgradeableComponent::Storage,
+        #[substorage(v0)]
+        outside_execution: OutsideExecutionComponent::Storage,
         session_keys: Map<felt252, SessionData>,
         session_entrypoints: Map<(felt252, u32), felt252>,
     }
@@ -93,12 +90,16 @@ mod Account {
         #[flat]
         SRC5Event: SRC5Component::Event,
         #[flat]
-        SRC9Event: SRC9Component::Event,
-        #[flat]
         UpgradeableEvent: UpgradeableComponent::Event,
+        #[flat]
+        OutsideExecutionEvent: OutsideExecutionComponent::Event,
         SessionKeyAdded: SessionKeyAdded,
         SessionKeyRevoked: SessionKeyRevoked,
         DebugEvent: DebugEvent,
+        SignatureValidation: SignatureValidation,
+        SessionValidationResult: SessionValidationResult,
+        ExecutionStarted: ExecutionStarted,
+        CallExecuted: CallExecuted,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -121,18 +122,58 @@ mod Account {
         message: felt252,
     }
 
+    #[derive(Drop, starknet::Event)]
+    struct SignatureValidation {
+        signature_length: u32,
+        validation_path: felt252,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct SessionValidationResult {
+        session_pubkey: felt252,
+        result: felt252,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct ExecutionStarted {
+        calls_count: u32,
+        source: felt252,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct CallExecuted {
+        call_index: u32,
+        target: starknet::ContractAddress,
+        success: bool,
+    }
+
     #[constructor]
     fn constructor(ref self: ContractState, public_key: felt252) {
-            self.account.initializer(public_key);
-        self.src9.initializer();
+        self.account.initializer(public_key);
+        
+        // Explicitly register SNIP-9 v2 interface for paymaster detection
+        let snip9_v2_interface_id: felt252 = 0x1d1144bb2138366ff28d8e9ab57456b1d332ac42196230c3a602003c89872;
+        self.src5.register_interface(snip9_v2_interface_id);
     }
 
 
+    // SRC-6 interface definition
+    #[starknet::interface]
+    trait ISRC6<TContractState> {
+        fn __validate__(ref self: TContractState, calls: Array<Call>) -> felt252;
+        fn __execute__(ref self: TContractState, calls: Array<Call>) -> Array<Span<felt252>>;
+        fn __validate_deploy__(
+            self: @TContractState,
+            class_hash: felt252,
+            contract_address_salt: felt252,
+            public_key: felt252
+        ) -> felt252;
+        fn __validate_declare__(self: @TContractState, class_hash: felt252) -> felt252;
+    }
+
     // Manually implement SRC-6 interface with custom __validate__
-    #[abi(per_item)]
-    #[generate_trait]
-    impl SRC6Impl of SRC6Trait {
-        #[external(v0)]
+    #[abi(embed_v0)]
+    impl SRC6Impl of ISRC6<ContractState> {
         fn __validate__(ref self: ContractState, calls: Array<Call>) -> felt252 {
             let tx_info = get_tx_info().unbox();
             let signature = tx_info.signature;
@@ -209,13 +250,14 @@ mod Account {
             0
         }
 
-        #[external(v0)]
         fn __execute__(ref self: ContractState, calls: Array<Call>) -> Array<Span<felt252>> {
-            // Validation happens in __validate__, not here
+            self.emit(ExecutionStarted { 
+                calls_count: calls.len(), 
+                source: '__execute__' 
+            });
             self._execute_calls(calls)
         }
 
-        #[external(v0)]
         fn __validate_deploy__(
             self: @ContractState,
             class_hash: felt252,
@@ -226,75 +268,9 @@ mod Account {
             self.account.validate_transaction()
         }
 
-        #[external(v0)]
         fn __validate_declare__(self: @ContractState, class_hash: felt252) -> felt252 {
             // Delegate to OpenZeppelin's component for proper V3 declare validation
             self.account.validate_transaction()
-        }
-
-        fn is_valid_signature(
-            self: @ContractState, hash: felt252, signature: Array<felt252>
-        ) -> felt252 {
-            // Owner path: 2-element signature [r, s]
-            if signature.len() == 2 {
-                let public_key = self.account.get_public_key();
-                let is_valid = check_ecdsa_signature(
-                    hash,
-                    public_key,
-                    *signature.at(0),
-                    *signature.at(1)
-                );
-                
-                if is_valid {
-                    return starknet::VALIDATED;
-                } else {
-                    return 0;
-                }
-            }
-            
-            // Session path: 4-element signature [session_pubkey, r, s, valid_until]
-            // Note: For SNIP-9 outside execution, the hash is already computed by SRC9Component
-            // We just need to verify the session key signature
-            if signature.len() == 4 {
-                let session_pubkey = *signature.at(0);
-                let r = *signature.at(1);
-                let s = *signature.at(2);
-                let valid_until: u64 = (*signature.at(3)).try_into().unwrap();
-
-                // Check timestamp
-                if get_block_timestamp() > valid_until {
-                    return 0;
-                }
-                
-                // Verify session key exists and is valid
-                let session = self.session_keys.read(session_pubkey);
-                if session.valid_until == 0 {
-                    return 0;
-                }
-                if get_block_timestamp() > session.valid_until {
-                    return 0;
-                }
-                if session.calls_used >= session.max_calls {
-                    return 0;
-                }
-
-                // Verify ECDSA signature with session key
-                let is_valid = check_ecdsa_signature(
-                    hash,
-                    session_pubkey,
-                    r,
-                    s
-                );
-                
-                if is_valid {
-                    return starknet::VALIDATED;
-                } else {
-                    return 0;
-                }
-            }
-            
-            // Invalid signature format
-            0
         }
     }
 
@@ -303,6 +279,34 @@ mod Account {
         fn upgrade(ref self: ContractState, new_class_hash: ClassHash) {
             self.account.assert_only_self();
             self.upgradeable.upgrade(new_class_hash);
+        }
+    }
+
+    // ========== SNIP-9 v2 INTEGRATION ==========
+    // Implement required traits for OutsideExecutionComponent
+    
+    /// Signature validation trait - validates owner and session signatures
+    /// Supports both owner (2-element) and session (4-element) signatures
+    impl SignatureValidatorImpl of OutsideExecutionComponent::ISignatureValidator<ContractState> {
+        fn validate_signature(
+            ref self: ContractState,
+            hash: felt252,
+            signature: Array<felt252>
+        ) -> bool {
+            // Use internal validation logic (same as is_valid_signature)
+            self._validate_signature_internal(hash, signature) == starknet::VALIDATED
+        }
+    }
+
+    /// Call executor trait - delegates to existing _execute_calls()
+    /// Uses our custom execution logic with CallExecuted events
+    impl CallExecutorImpl of OutsideExecutionComponent::ICallExecutor<ContractState> {
+        fn execute_calls(
+            ref self: ContractState,
+            calls: Array<Call>
+        ) -> Array<Span<felt252>> {
+            // Delegate to our existing _execute_calls internal function
+            self._execute_calls(calls)
         }
     }
 
@@ -422,48 +426,17 @@ mod Account {
     // ERC-1271 compatible signature validation
     #[external(v0)]
     fn is_valid_signature(
-        self: @ContractState, 
+        ref self: ContractState, 
         hash: felt252, 
         signature: Array<felt252>
     ) -> felt252 {
-        // Owner path: 2-element signature [r, s]
-        if signature.len() == 2 {
-            let public_key = self.account.get_public_key();
-            let ok = check_ecdsa_signature(hash, public_key, *signature.at(0), *signature.at(1));
-            if ok { return starknet::VALIDATED; } else { return 0; }
-        }
+        self.emit(SignatureValidation { 
+            signature_length: signature.len(), 
+            validation_path: 'is_valid_sig' 
+        });
         
-        // Session path: 4-element signature [session_pubkey, r, s, valid_until]
-        if signature.len() == 4 {
-            let session_pubkey = *signature.at(0);
-            let r = *signature.at(1);
-            let s = *signature.at(2);
-            let valid_until: u64 = (*signature.at(3)).try_into().unwrap();
-
-            // Check timestamp
-            if get_block_timestamp() > valid_until {
-                return 0;
-            }
-            
-            // Verify session key exists and is valid
-            let session = self.session_keys.read(session_pubkey);
-            if session.valid_until == 0 {
-                return 0;
-            }
-            if get_block_timestamp() > session.valid_until {
-                return 0;
-            }
-            if session.calls_used >= session.max_calls {
-                return 0;
-            }
-
-            // Verify ECDSA signature with session key
-            let ok = check_ecdsa_signature(hash, session_pubkey, r, s);
-            if ok { return starknet::VALIDATED; } else { return 0; }
-        }
-        
-        // Invalid signature format
-        0
+        // Delegate to internal validation (shared with OutsideExecution)
+        self._validate_signature_internal(hash, signature)
     }
 
     // Read-only session entrypoint helpers (safe)
@@ -490,6 +463,58 @@ mod Account {
 
         fn _load_entrypoint(self: @ContractState, session_key: felt252, index: u32) -> felt252 {
             self.session_entrypoints.read((session_key, index))
+        }
+
+        /// Internal signature validation - used by both is_valid_signature() and OutsideExecution
+        /// Supports both owner (2-element) and session (4-element) signatures
+        fn _validate_signature_internal(
+            ref self: ContractState,
+            hash: felt252,
+            signature: Array<felt252>
+        ) -> felt252 {
+            // Owner path: 2-element signature [r, s]
+            if signature.len() == 2 {
+                let public_key = self.account.get_public_key();
+                let ok = check_ecdsa_signature(hash, public_key, *signature.at(0), *signature.at(1));
+                if ok { return starknet::VALIDATED; } else { return 0; }
+            }
+            
+            // Session path: 4-element signature [session_pubkey, r, s, valid_until]
+            if signature.len() == 4 {
+                let session_pubkey = *signature.at(0);
+                let r = *signature.at(1);
+                let s = *signature.at(2);
+                let valid_until: u64 = (*signature.at(3)).try_into().unwrap();
+
+                // Check timestamp
+                if get_block_timestamp() > valid_until {
+                    return 0;
+                }
+                
+                // Verify session key exists and is valid
+                let session = self.session_keys.read(session_pubkey);
+                if session.valid_until == 0 {
+                    return 0;
+                }
+                if get_block_timestamp() > session.valid_until {
+                    return 0;
+                }
+                if session.calls_used >= session.max_calls {
+                    return 0;
+                }
+
+                // Verify ECDSA signature with session key
+                let ok = check_ecdsa_signature(hash, session_pubkey, r, s);
+                if ok {
+                    self._consume_session_call(session_pubkey);
+                    return starknet::VALIDATED;
+                } else {
+                    return 0;
+                }
+            }
+            
+            // Invalid signature format
+            0
         }
 
         // NEW: Pure session validation check (no mutations)
@@ -646,19 +671,32 @@ mod Account {
         /// Execute calls and return results
         fn _execute_calls(ref self: ContractState, mut calls: Array<Call>) -> Array<Span<felt252>> {
             let mut res = array![];
-            
+            let mut call_index = 0_u32;
             loop {
                 match calls.pop_front() {
                     Option::Some(call) => {
                         match starknet::syscalls::call_contract_syscall(
                             call.to, call.selector, call.calldata
                         ) {
-                            Result::Ok(ret) => res.append(ret),
+                            Result::Ok(ret) => {
+                                self.emit(CallExecuted { 
+                                    call_index, 
+                                    target: call.to, 
+                                    success: true 
+                                });
+                                res.append(ret);
+                            },
                             Result::Err(_) => {
+                                self.emit(CallExecuted { 
+                                    call_index, 
+                                    target: call.to, 
+                                    success: false 
+                                });
                                 let mut err = array![];
                                 res.append(err.span());
                             }
                         }
+                        call_index += 1;
                     },
                     Option::None => { break; },
                 }

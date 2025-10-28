@@ -4,18 +4,49 @@ This document tracks all contract class declarations on Starknet mainnet.
 
 ---
 
-## Latest Class Declaration (v25 - Complete Paymaster + SNIP-9 Session Fix)
+## Latest Class Declaration (v26 - Fixed SRC6 Interface Implementation)
 
 ### Deployment Information
-- **Class Hash**: `0x792915e08867ec1bd0f248ee82b9fdd5e9463d5949f9b82990d644e775103c3`
-- **Transaction Hash**: `0x4c78993cc03deac57f31aec658e3ed238a1023bfe637ce275d0cedbb45d7aa6`
+- **Class Hash**: `0xad74b94d9891672cd49e11b2abe56ece9539fd02eedf2d4980537663277984`
+- **Transaction Hash**: `0x432470f1a56249ccedbe4aeb4bb54db7cb8f975697f50fff772fc84f33cb037`
 - **Status**: ✅ Declared on L2
 - **Date**: October 28, 2025
 - **Starkscan Links**:
-  - Class: https://starkscan.co/class/0x0792915e08867ec1bd0f248ee82b9fdd5e9463d5949f9b82990d644e775103c3
-  - Transaction: https://starkscan.co/tx/0x04c78993cc03deac57f31aec658e3ed238a1023bfe637ce275d0cedbb45d7aa6
+  - Class: https://starkscan.co/class/0x00ad74b94d9891672cd49e11b2abe56ece9539fd02eedf2d4980537663277984
+  - Transaction: https://starkscan.co/tx/0x0432470f1a56249ccedbe4aeb4bb54db7cb8f975697f50fff772fc84f33cb037
 
-### Key Changes in Version 25 (October 28, 2025)
+### Key Changes in Version 26 (October 28, 2025)
+
+#### 🔧 Fixed: SRC6 Interface Implementation for SNIP-9 Compatibility
+
+**Problem**: 
+Using `#[abi(per_item)]` + `#[generate_trait]` pattern didn't properly expose SRC6 functions for SNIP-9 outside execution. Additionally, `is_valid_signature` was incorrectly placed inside the SRC6Impl block.
+
+**Issues Found**:
+1. ❌ `is_valid_signature` was inside SRC6Impl (shouldn't be part of SRC6)
+2. ❌ `#[external(v0)]` on each function with `#[abi(per_item)]` instead of `#[abi(embed_v0)]`
+3. ❌ Missing debug events in `__execute__` and `_execute_calls`
+
+**Solution**:
+- ✅ Defined explicit `ISRC6<TContractState>` interface
+- ✅ Changed to `#[abi(embed_v0)]` pattern for proper ABI exposure
+- ✅ Removed `#[external(v0)]` attributes (handled by `#[abi(embed_v0)]`)
+- ✅ Removed `is_valid_signature` from SRC6Impl (kept as separate external function)
+- ✅ Added debug events to track execution flow
+
+**Code Changes**:
+- `src/account.cairo` lines 131-143: Added explicit ISRC6 interface definition
+- `src/account.cairo` line 146: Changed to `#[abi(embed_v0)]`
+- `src/account.cairo` lines 224-227: Added debug events to `__execute__`
+- `src/account.cairo` lines 592-620: Added debug events to `_execute_calls`
+- Removed duplicate `is_valid_signature` from SRC6Impl block
+
+**Why This Matters**:
+The `#[abi(embed_v0)]` pattern properly exposes all interface functions in the ABI, which is critical for SNIP-9's `execute_from_outside` to correctly call `__execute__` after signature validation.
+
+---
+
+### Previous Fixes (Included in v26)
 
 #### 🔧 Fixed: TWO Critical Bugs Preventing Session Keys with Paymaster & SNIP-9
 
@@ -86,7 +117,7 @@ sncast --account deployer_oz \
   invoke \
   --contract-address <YOUR_DEPLOYED_CONTRACT_ADDRESS> \
   --function upgrade \
-  --calldata 0x792915e08867ec1bd0f248ee82b9fdd5e9463d5949f9b82990d644e775103c3 \
+  --calldata 0xad74b94d9891672cd49e11b2abe56ece9539fd02eedf2d4980537663277984 \
   --network mainnet
 ```
 
@@ -140,6 +171,13 @@ Expected result: 18/18 tests passing
 ---
 
 ## Previous Deployments
+
+### v25 - Complete Paymaster + SNIP-9 Session Fix (Superseded)
+- **Class Hash**: `0x792915e08867ec1bd0f248ee82b9fdd5e9463d5949f9b82990d644e775103c3`
+- **Date**: October 28, 2025
+- **Status**: ⚠️ Superseded by v26
+- **Issue**: Fixed validation logic but had SRC6 interface implementation issue
+- **Starkscan**: https://starkscan.co/class/0x0792915e08867ec1bd0f248ee82b9fdd5e9463d5949f9b82990d644e775103c3
 
 ### v24 - Partial SNIP-9 Session Key Fix (Superseded)
 - **Class Hash**: `0x3aa948f0a598caa2b913421e4e5ff31c6d0c590a91623d6364d71cf92d15bff`
