@@ -242,23 +242,66 @@ mod Account {
         fn is_valid_signature(
             self: @ContractState, hash: felt252, signature: Array<felt252>
         ) -> felt252 {
-            if signature.len() != 2 {
-                return 0;
+            // Owner path: 2-element signature [r, s]
+            if signature.len() == 2 {
+                let public_key = self.account.get_public_key();
+                let is_valid = check_ecdsa_signature(
+                    hash,
+                    public_key,
+                    *signature.at(0),
+                    *signature.at(1)
+                );
+                
+                if is_valid {
+                    return starknet::VALIDATED;
+                } else {
+                    return 0;
+                }
             }
             
-            let public_key = self.account.get_public_key();
-            let is_valid = check_ecdsa_signature(
-                hash,
-                public_key,
-                *signature.at(0),
-                *signature.at(1)
-            );
-            
-            if is_valid {
-                starknet::VALIDATED
-            } else {
-                0
+            // Session path: 4-element signature [session_pubkey, r, s, valid_until]
+            // Note: For SNIP-9 outside execution, the hash is already computed by SRC9Component
+            // We just need to verify the session key signature
+            if signature.len() == 4 {
+                let session_pubkey = *signature.at(0);
+                let r = *signature.at(1);
+                let s = *signature.at(2);
+                let valid_until: u64 = (*signature.at(3)).try_into().unwrap();
+
+                // Check timestamp
+                if get_block_timestamp() > valid_until {
+                    return 0;
+                }
+                
+                // Verify session key exists and is valid
+                let session = self.session_keys.read(session_pubkey);
+                if session.valid_until == 0 {
+                    return 0;
+                }
+                if get_block_timestamp() > session.valid_until {
+                    return 0;
+                }
+                if session.calls_used >= session.max_calls {
+                    return 0;
+                }
+
+                // Verify ECDSA signature with session key
+                let is_valid = check_ecdsa_signature(
+                    hash,
+                    session_pubkey,
+                    r,
+                    s
+                );
+                
+                if is_valid {
+                    return starknet::VALIDATED;
+                } else {
+                    return 0;
+                }
             }
+            
+            // Invalid signature format
+            0
         }
     }
 
@@ -390,10 +433,44 @@ mod Account {
         hash: felt252, 
         signature: Array<felt252>
     ) -> felt252 {
-        if signature.len() != 2 { return 0; }
-        let public_key = self.account.get_public_key();
-        let ok = check_ecdsa_signature(hash, public_key, *signature.at(0), *signature.at(1));
-        if ok { starknet::VALIDATED } else { 0 }
+        // Owner path: 2-element signature [r, s]
+        if signature.len() == 2 {
+            let public_key = self.account.get_public_key();
+            let ok = check_ecdsa_signature(hash, public_key, *signature.at(0), *signature.at(1));
+            if ok { return starknet::VALIDATED; } else { return 0; }
+        }
+        
+        // Session path: 4-element signature [session_pubkey, r, s, valid_until]
+        if signature.len() == 4 {
+            let session_pubkey = *signature.at(0);
+            let r = *signature.at(1);
+            let s = *signature.at(2);
+            let valid_until: u64 = (*signature.at(3)).try_into().unwrap();
+
+            // Check timestamp
+            if get_block_timestamp() > valid_until {
+                return 0;
+            }
+            
+            // Verify session key exists and is valid
+            let session = self.session_keys.read(session_pubkey);
+            if session.valid_until == 0 {
+                return 0;
+            }
+            if get_block_timestamp() > session.valid_until {
+                return 0;
+            }
+            if session.calls_used >= session.max_calls {
+                return 0;
+            }
+
+            // Verify ECDSA signature with session key
+            let ok = check_ecdsa_signature(hash, session_pubkey, r, s);
+            if ok { return starknet::VALIDATED; } else { return 0; }
+        }
+        
+        // Invalid signature format
+        0
     }
 
     // Read-only session entrypoint helpers (safe)
