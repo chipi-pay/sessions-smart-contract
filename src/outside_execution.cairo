@@ -12,24 +12,28 @@ pub struct OutsideExecution {
     pub execute_before: u64,
 }
 
-// SNIP-12 Type Hashes - PRODUCTION READY ✅
-// Computed using: starknet_keccak(type_string) % PRIME
-// where PRIME = 2^251 + 17 * 2^192 + 1
+// SNIP-12 Type Hashes - OFFICIAL SNIP-9 v2 VALUES ✅
+// Source: https://github.com/starknet-io/SNIPs/blob/main/SNIPS/snip-9.md
 //
-// Verification script: scripts/compute_snip12_type_hashes.py
-// All values verified mathematically correct on 2024-10-28
+// IMPORTANT: These MUST match the official SNIP-9 v2 specification exactly:
+// - Capitalized field names (Caller, Nonce, etc.)
+// - NO _len fields
+// - "Execute After" and "Execute Before" have SPACES
+// - Call uses type="selector" not type="felt"
 
 // StarknetDomain(name:shortstring,version:shortstring,chainId:felt,revision:shortstring)
 pub const STARKNET_DOMAIN_TYPE_HASH: felt252 = 
     0x06e3b1a0f44677d1e2792819f5bd0f619216c5c15b53ab9e32222b38557a83b6;
 
-// OutsideExecution(caller:ContractAddress,nonce:felt,execute_after:u128,execute_before:u128,calls_len:felt,calls:Call*)
+// OutsideExecution("Caller":"ContractAddress","Nonce":"felt","Execute After":"u128","Execute Before":"u128","Calls":"Call*")
+// Official hash from SNIP-9 spec
 pub const OUTSIDE_EXECUTION_TYPE_HASH: felt252 =
-    0x00740e68dea8ee199471f33c2917185e212b88eb92043927de470de44b91cdce;
+    0x0312b56c05a7965066ddbda31c016d8d05afc305071c0ca3cdc2192c3c2f1f0f;
 
-// Call(to:ContractAddress,selector:felt,calldata_len:felt,calldata:felt*)
+// Call("To":"ContractAddress","Selector":"selector","Calldata":"felt*")
+// Official hash from SNIP-9 spec
 pub const CALL_TYPE_HASH: felt252 =
-    0x0778f3b261b5528e28c6e4766907a87d8b419322ad49cd4b96903f01d0908532;
+    0x03635c7f2a7ba93844c0d064e18e487f35ab90f7c39d00f186a781fc3f0c2ca9;
 
 #[starknet::interface]
 pub trait IOutsideExecution<TContractState> {
@@ -280,7 +284,7 @@ pub mod OutsideExecutionComponent {
             hash_data.append(outside_execution.nonce);
             hash_data.append(outside_execution.execute_after.into());
             hash_data.append(outside_execution.execute_before.into());
-            hash_data.append(calls.len().into());
+            // SNIP-9 v2: NO calls.len() field! It's removed from the hash
             
             // Hash each call
             let mut i = 0;
@@ -297,7 +301,7 @@ pub mod OutsideExecutionComponent {
             poseidon_hash_span(hash_data.span())
         }
 
-        /// Hash a single Call struct
+        /// Hash a single Call struct per SNIP-9 v2
         fn _hash_call(
             self: @ComponentState<TContractState>,
             call: Call
@@ -307,9 +311,9 @@ pub mod OutsideExecutionComponent {
             hash_data.append(CALL_TYPE_HASH);
             hash_data.append(call.to.into());
             hash_data.append(call.selector.into());
-            hash_data.append(call.calldata.len().into());
+            // SNIP-9 v2: NO calldata.len() field! It's removed from the hash
             
-            // Append calldata elements
+            // Append calldata elements directly
             let mut i = 0;
             loop {
                 if i >= call.calldata.len() {
