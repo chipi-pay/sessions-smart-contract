@@ -145,13 +145,6 @@ mod Account {
             self.emit(DebugEvent { message: 'version' });
             self.emit(DebugEvent { message: version });
 
-            // For version 1 transactions (Paymaster/SNIP-9), always delegate to AccountComponent
-            // This ensures Paymaster compatibility
-            if version == 1 {
-                self.emit(DebugEvent { message: 'v1_paymaster_path' });
-                return self.account.validate_transaction();
-            }
-
             // Self-calls routed via __execute__ carry no tx signature
             // SECURITY: Only allow empty signatures if caller is the account itself
             if signature.len() == 0 {
@@ -163,14 +156,7 @@ mod Account {
                 }
             }
 
-            // Owner path: 2-elt signature → delegate to OZ (handles tx v1 and v3 hashing)
-            if signature.len() == 2 {
-                self.emit(DebugEvent { message: 'owner_path' });
-                // Use AccountComponent's validate function for owner signatures
-                // This should handle both v1 (Paymaster) and v3 (standard) transactions
-                return self.account.validate_transaction();
-            }
-
+            // ✅ FIX: Handle session signatures FIRST, regardless of version
             // Session path: 4-elt signature [session_pubkey, r, s, valid_until]
             // Works with both v1 (Paymaster) and v3 (standard) transactions
             if signature.len() == 4 {
@@ -209,6 +195,13 @@ mod Account {
                     self.emit(DebugEvent { message: 'signature_failed' });
                     return 0;
                 }
+            }
+
+            // Owner path: 2-elt signature → delegate to OZ (handles tx v1 and v3 hashing)
+            // AccountComponent handles both v1 (Paymaster) and v3 (standard) transactions
+            if signature.len() == 2 {
+                self.emit(DebugEvent { message: 'owner_path' });
+                return self.account.validate_transaction();
             }
 
             // If we reach here, validation failed
