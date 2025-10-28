@@ -50,11 +50,10 @@ mod Account {
     component!(path: UpgradeableComponent, storage: upgradeable, event: UpgradeableEvent);
     component!(path: OutsideExecutionComponent, storage: outside_execution, event: OutsideExecutionEvent);
 
-    // DO NOT embed PublicKeyImpl/PublicKeyCamelImpl - we'll add explicit external functions
-    // to ensure paymaster compatibility with custom SRC6Impl
-    impl PublicKeyInternalImpl = AccountComponent::PublicKeyImpl<ContractState>;
-    impl PublicKeyCamelInternalImpl = AccountComponent::PublicKeyCamelImpl<ContractState>;
-    
+    #[abi(embed_v0)]
+    impl PublicKeyImpl = AccountComponent::PublicKeyImpl<ContractState>;
+    #[abi(embed_v0)]
+    impl PublicKeyCamelImpl = AccountComponent::PublicKeyCamelImpl<ContractState>;
     #[abi(embed_v0)]
     impl SRC5Impl = SRC5Component::SRC5Impl<ContractState>;
     impl SRC5InternalImpl = SRC5Component::InternalImpl<ContractState>;
@@ -283,19 +282,6 @@ mod Account {
         }
     }
 
-    // ========== EXPLICIT PUBLIC KEY ENTRYPOINTS ==========
-    // Required for paymaster compatibility with custom SRC6Impl
-    // Even though PublicKeyImpl is embedded, custom SRC6 can hide it from ABI
-    
-    #[external(v0)]
-    fn get_public_key(self: @ContractState) -> felt252 {
-        self.account.get_public_key()
-    }
-
-    #[external(v0)]
-    fn getPublicKey(self: @ContractState) -> felt252 {
-        self.account.get_public_key()
-    }
 
     // ========== SNIP-9 v2 INTEGRATION ==========
     // Implement required traits for OutsideExecutionComponent
