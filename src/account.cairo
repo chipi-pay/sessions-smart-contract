@@ -50,12 +50,10 @@ mod Account {
     component!(path: UpgradeableComponent, storage: upgradeable, event: UpgradeableEvent);
     component!(path: OutsideExecutionComponent, storage: outside_execution, event: OutsideExecutionEvent);
 
-    #[abi(embed_v0)]
-    impl PublicKeyImpl = AccountComponent::PublicKeyImpl<ContractState>;
-    #[abi(embed_v0)]
-    impl PublicKeyCamelImpl = AccountComponent::PublicKeyCamelImpl<ContractState>;
-    #[abi(embed_v0)]
-    impl SRC5Impl = SRC5Component::SRC5Impl<ContractState>;
+    // DO NOT embed PublicKeyImpl/SRC5Impl - custom ISRC6 hides them from ABI
+    // We add explicit external wrappers below instead
+    impl PublicKeyInternalImpl = AccountComponent::PublicKeyImpl<ContractState>;
+    impl PublicKeyCamelInternalImpl = AccountComponent::PublicKeyCamelImpl<ContractState>;
     impl SRC5InternalImpl = SRC5Component::InternalImpl<ContractState>;
     impl AccountInternalImpl = AccountComponent::InternalImpl<ContractState>;
     // DO NOT embed AccountComponent::SRC6Impl - we implement our own __validate__
@@ -453,6 +451,35 @@ mod Account {
         index: u32
     ) -> felt252 {
         self._load_entrypoint(session_key, index)
+    }
+
+    // ========== EXPLICIT ENTRYPOINT WRAPPERS FOR PAYMASTER ==========
+    // Custom ISRC6 interface hides embedded PublicKeyImpl and SRC5Impl from ABI
+    // These explicit wrappers ensure the entrypoints are callable by paymasters
+    
+    #[external(v0)]
+    fn get_public_key(self: @ContractState) -> felt252 {
+        self.account.get_public_key()
+    }
+
+    #[external(v0)]
+    fn getPublicKey(self: @ContractState) -> felt252 {
+        self.account.get_public_key()
+    }
+
+    #[external(v0)]
+    fn supports_interface(self: @ContractState, interface_id: felt252) -> bool {
+        // Manually check interface registration
+        // SRC-5 interface itself
+        if interface_id == 0x3f918d17e5ee77373b56385708f855659a07f75997f365cf87748628532a055 {
+            return true;
+        }
+        // SNIP-9 v2 interface
+        if interface_id == 0x1d1144bb2138366ff28d8e9ab57456b1d332ac42196230c3a602003c89872 {
+            return true;
+        }
+        // Delegate to component for other interfaces
+        self.src5.SRC5_supported_interfaces.read(interface_id)
     }
 
     #[generate_trait]
