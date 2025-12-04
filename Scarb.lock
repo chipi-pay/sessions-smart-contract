@@ -2,6 +2,11 @@
 version = 1
 
 [[package]]
+name = "avnu_lib"
+version = "0.1.0"
+source = "git+https://github.com/avnu-labs/avnu-contracts-lib?tag=v0.1.0#d9c44c62ce037e4c11440b1e07828d9075e490e2"
+
+[[package]]
 name = "openzeppelin"
 version = "2.0.0"
 source = "git+https://github.com/OpenZeppelin/cairo-contracts.git?tag=v2.0.0#f1c15a30a44311166e0368081c5f79ab5a02c1d3"
@@ -111,6 +116,7 @@ source = "git+https://github.com/OpenZeppelin/cairo-contracts.git?tag=v2.0.0#f1c
 name = "sessions_smart_contract"
 version = "0.1.0"
 dependencies = [
+ "avnu_lib",
  "openzeppelin",
  "snforge_std_deprecated",
 ]
