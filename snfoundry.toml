@@ -5,7 +5,7 @@ accounts-file = "~/.starknet_accounts/starknet_open_zeppelin_accounts.json"
 [sncast.mainnet]
 account = "deployer_oz"
 accounts-file = "~/.starknet_accounts/starknet_open_zeppelin_accounts.json"
-url = "https://starknet-mainnet.infura.io/v3/2OXKaYz1Tj90DatgCJYKGIVrHvW"
+url = "https://starknet-mainnet.infura.io/v3/4a4a1fdd7d704509aa99154fb29886e2"
 
 [sncast.sepolia]
 account = "deployer_oz"

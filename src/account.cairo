@@ -44,6 +44,7 @@ mod Account {
     
     // Custom SNIP-9 v2 implementation with production-ready type hashes
     use sessions_smart_contract::outside_execution::OutsideExecutionComponent;
+    use sessions_smart_contract::outside_execution::OutsideExecution;
 
     component!(path: AccountComponent, storage: account, event: AccountEvent);
     component!(path: SRC5Component, storage: src5, event: SRC5Event);
@@ -283,7 +284,7 @@ mod Account {
     // ========== SNIP-9 v2 INTEGRATION ==========
     // Implement required traits for OutsideExecutionComponent
     
-    /// Signature validation trait - validates owner and session signatures
+    /// Signature validation trait for OutsideExecution
     /// Supports both owner (2-element) and session (4-element) signatures
     impl SignatureValidatorImpl of OutsideExecutionComponent::ISignatureValidator<ContractState> {
         fn validate_signature(
@@ -291,8 +292,53 @@ mod Account {
             hash: felt252,
             signature: Array<felt252>
         ) -> bool {
-            // Use internal validation logic (same as is_valid_signature)
-            self._validate_signature_internal(hash, signature) == starknet::VALIDATED
+            // DEBUG: Log signature length for OutsideExecution
+            // Note: This will only appear if validate_signature is called from execute_from_outside_v2
+            // We can't emit events from trait impl, so we rely on the signature length check
+            
+            // Owner signature (2 elements)
+            if signature.len() == 2 {
+                let public_key = self.account.get_public_key();
+                let r = *signature.at(0);
+                let s = *signature.at(1);
+                return check_ecdsa_signature(hash, public_key, r, s);
+            }
+            
+            // Session signature (4 elements) - simplified for OutsideExecution
+            if signature.len() == 4 {
+                let session_pubkey = *signature.at(0);
+                let r = *signature.at(1);
+                let s = *signature.at(2);
+                let valid_until: u64 = (*signature.at(3)).try_into().unwrap();
+                
+                // Check timestamp
+                if get_block_timestamp() > valid_until {
+                    return false;
+                }
+                
+                // Check session exists and is valid
+                let session = self.session_keys.read(session_pubkey);
+                if session.valid_until == 0 || get_block_timestamp() > session.valid_until {
+                    return false;
+                }
+                if session.calls_used >= session.max_calls {
+                    return false;
+                }
+                
+                // ECDSA check: hash must be the SNIP-12 typed data hash
+                // This hash should match exactly what was signed by the frontend
+                let is_valid = check_ecdsa_signature(hash, session_pubkey, r, s);
+                
+                if is_valid {
+                    // Consume session call
+                    self._consume_session_call(session_pubkey);
+                }
+                
+                return is_valid;
+            }
+            
+            // Invalid signature format
+            false
         }
     }
 
@@ -411,6 +457,15 @@ mod Account {
         2
     }
 
+    // SNIP-26 get_nonce - required for paymaster account version detection
+    #[external(v0)]
+    fn get_nonce(self: @ContractState) -> felt252 {
+        // Get nonce from transaction info (for current transaction context)
+        // For read-only calls, return 0 or use account component's nonce
+        let tx_info = get_tx_info().unbox();
+        tx_info.nonce
+    }
+
     // Safe debugging: uses real tx_info (no forced parameters)
     #[external(v0)]
     fn compute_session_message_hash(
@@ -480,6 +535,18 @@ mod Account {
         }
         // Delegate to component for other interfaces
         self.src5.SRC5_supported_interfaces.read(interface_id)
+    }
+
+    // ========== SNIP-9 MESSAGE HASH HELPER ==========
+    // Note: get_outside_execution_message_hash_rev_1 is already exposed via
+    // OutsideExecutionImpl (embedded with #[abi(embed_v0)])
+    // This alias provides compatibility for callers expecting the shorter name
+    #[external(v0)]
+    fn get_outside_execution_message_hash(
+        self: @ContractState,
+        outside_execution: OutsideExecution,
+    ) -> felt252 {
+        self.outside_execution.get_outside_execution_message_hash_rev_1(outside_execution)
     }
 
     #[generate_trait]
