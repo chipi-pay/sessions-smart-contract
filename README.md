@@ -150,13 +150,6 @@ const outsideExecution = {
 
 await paymaster.executeFromOutside(accountAddress, outsideExecution, signature);
 ```
-
-### Supported Paymasters
-
-- ✅ **AVNU Paymaster** — DEX aggregator sponsorship
-- ✅ **Nimbora Paymaster** — DeFi yield sponsorship
-- ✅ **Custom Paymasters** — Build your own sponsorship logic
-
 ---
 
 ## 🛡️ Security Architecture
@@ -232,14 +225,15 @@ We removed debug events for production cleanliness:
 
 ## 🧪 Comprehensive Test Suite
 
-### Test Results: 38/38 Passing ✅
+### Test Results: 44/44 Passing ✅
 
 ```bash
 $ snforge test
 
-Collected 38 test(s) from sessions_smart_contract package
-Running 38 test(s) from tests/
+Collected 44 test(s) from sessions_smart_contract package
+Running 44 test(s) from tests/
 
+# Session Validation Tests (21)
 [PASS] test_owner_signature_valid
 [PASS] test_session_signature_valid
 [PASS] test_session_expired
@@ -255,9 +249,19 @@ Running 38 test(s) from tests/
 [PASS] test_upgrade_still_owner_only
 [PASS] test_invalid_signature_length_3_elements
 [PASS] test_empty_signature_fails
+[PASS] test_compute_session_message_hash_matches_manual
+[PASS] test_outside_execution_hash_matches_manual
+[PASS] test_validate_session_expired_returns_zero
+[PASS] test_validate_session_blocks_disallowed_selector
+[PASS] test_is_valid_signature_owner_vs_session_paths
+[PASS] test_outside_execution_nonce_default_and_invalid_signature
+
+# SNIP-9 Compatibility Tests (3)
 [PASS] test_snip9_version_returns_v2
 [PASS] test_contract_info_shows_snip9_compatible
 [PASS] test_session_keys_still_work_with_snip9
+
+# Hash Computation Tests (7)
 [PASS] test_starknet_domain_type_hash_is_correct
 [PASS] test_call_type_hash_is_correct
 [PASS] test_outside_execution_type_hash_is_correct
@@ -265,6 +269,8 @@ Running 38 test(s) from tests/
 [PASS] test_outside_execution_hash_changes_with_nonce
 [PASS] test_outside_execution_hash_changes_with_caller
 [PASS] test_outside_execution_nonce_validity
+
+# Outside Execution Tests (13)
 [PASS] test_fresh_nonce_is_valid
 [PASS] test_zero_nonce_is_valid
 [PASS] test_message_hash_computation
@@ -279,16 +285,17 @@ Running 38 test(s) from tests/
 [PASS] test_large_nonce_value
 [PASS] test_large_calldata
 
-Tests: 38 passed, 0 failed, 0 ignored, 0 filtered out
+Tests: 44 passed, 0 failed, 0 ignored, 0 filtered out
 ```
 
 ### Test Categories
 
 | Category | Tests | What It Covers |
 |----------|-------|----------------|
-| **Session Validation** | 15 | Add, revoke, expiry, limits, selectors |
+| **Session Validation** | 21 | Add, revoke, expiry, limits, selectors, signatures |
+| **SNIP-9 Compatibility** | 3 | Version checks, interface detection |
 | **Hash Computation** | 7 | SNIP-12 type hashes, determinism |
-| **Outside Execution** | 16 | SNIP-9 nonces, timestamps, callers |
+| **Outside Execution** | 13 | Nonces, timestamps, callers, boundaries |
 
 ---
 
