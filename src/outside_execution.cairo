@@ -3,14 +3,14 @@
 
 use starknet::account::Call;
 
-// SNIP-9 Outside Execution struct (CORRECTED - calls included!)
+// SNIP-9 Outside Execution struct
 #[derive(Drop, Serde)]
 pub struct OutsideExecution {
     pub caller: starknet::ContractAddress,
     pub nonce: felt252,
     pub execute_after: u64,
     pub execute_before: u64,
-    pub calls: Span<Call>,  // ✅ ADDED - was missing!
+    pub calls: Span<Call>,
 }
 
 // SNIP-12 Revision 1 Type Hashes
@@ -62,7 +62,6 @@ pub mod OutsideExecutionComponent {
     #[derive(Drop, starknet::Event)]
     pub enum Event {
         OutsideExecutionExecuted: OutsideExecutionExecuted,
-        OutsideExecutionValidation: OutsideExecutionValidation,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -71,12 +70,6 @@ pub mod OutsideExecutionComponent {
         pub hash: felt252,
         pub nonce: felt252,
         pub caller: ContractAddress,
-    }
-
-    #[derive(Drop, starknet::Event)]
-    pub struct OutsideExecutionValidation {
-        pub step: felt252,
-        pub value: felt252,
     }
 
     // Error messages
@@ -98,14 +91,8 @@ pub mod OutsideExecutionComponent {
         fn execute_from_outside_v2(
             ref self: ComponentState<TContractState>,
             outside_execution: OutsideExecution,
-            signature: Array<felt252>,  // SNIP-9 v2 standard: Array
+            signature: Array<felt252>,
         ) -> Array<Span<felt252>> {
-            // DEBUG: Emit signature info immediately
-            self.emit(OutsideExecutionValidation {
-                step: 'oe_start',
-                value: signature.len().into()
-            });
-            
             let current_time = get_block_timestamp();
             
             // 1. Validate timestamp bounds
@@ -118,16 +105,9 @@ pub mod OutsideExecutionComponent {
                 Errors::INVALID_TIMESTAMP
             );
 
-            self.emit(OutsideExecutionValidation {
-                step: 'timestamp_ok',
-                value: current_time.into()
-            });
-
-            // 2. Validate caller
+            // 2. Validate caller (ANY_CALLER = 0 means anyone can execute)
             let tx_info = get_tx_info().unbox();
             let actual_caller = tx_info.account_contract_address;
-            
-            // ANY_CALLER = 0 means anyone can execute
             let any_caller: ContractAddress = 0.try_into().unwrap();
             if outside_execution.caller != any_caller {
                 assert(
@@ -136,26 +116,14 @@ pub mod OutsideExecutionComponent {
                 );
             }
 
-            self.emit(OutsideExecutionValidation {
-                step: 'caller_ok',
-                value: actual_caller.into()
-            });
-
             // 3. Validate nonce (prevent replay)
             assert(
                 !self.outside_execution_nonces.read(outside_execution.nonce),
                 Errors::NONCE_USED
             );
-
-            // Mark nonce as used
             self.outside_execution_nonces.write(outside_execution.nonce, true);
 
-            self.emit(OutsideExecutionValidation {
-                step: 'nonce_ok',
-                value: outside_execution.nonce
-            });
-
-            // 4. Copy all needed values before moving outside_execution
+            // 4. Copy needed values before moving outside_execution
             let calls_span = outside_execution.calls;
             let nonce_copy = outside_execution.nonce;
             
@@ -175,23 +143,12 @@ pub mod OutsideExecutionComponent {
                 calls_span
             );
 
-            self.emit(OutsideExecutionValidation {
-                step: 'msg_hash',
-                value: message_hash
-            });
-
-            // 6. Validate signature (delegate to contract's is_valid_signature)
+            // 6. Validate signature
             let mut contract_state = self.get_contract_mut();
             let is_valid = contract_state.validate_signature(message_hash, signature);
-            
             assert(is_valid, Errors::INVALID_SIGNATURE);
 
-            self.emit(OutsideExecutionValidation {
-                step: 'sig_valid',
-                value: 1
-            });
-
-            // 7. Execute calls (delegate to contract's execution logic)
+            // 7. Execute calls
             let results = contract_state.execute_calls(calls_array);
 
             // 8. Emit success event

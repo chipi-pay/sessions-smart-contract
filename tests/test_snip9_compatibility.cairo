@@ -47,8 +47,8 @@ mod test_snip9_compatibility {
         // Check contract info
         let info = snip9_dispatcher.get_contract_info();
         
-        // Should indicate SNIP-9 compatibility
-        assert(info == 'v23_snip9_compatible', 'Wrong version string');
+        // Should indicate SNIP-9 v2 compatibility with custom implementation
+        assert(info == 'v27_custom_snip9v2', 'Wrong version string');
     }
 
     #[test]

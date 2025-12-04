@@ -94,11 +94,6 @@ mod Account {
         OutsideExecutionEvent: OutsideExecutionComponent::Event,
         SessionKeyAdded: SessionKeyAdded,
         SessionKeyRevoked: SessionKeyRevoked,
-        DebugEvent: DebugEvent,
-        SignatureValidation: SignatureValidation,
-        SessionValidationResult: SessionValidationResult,
-        ExecutionStarted: ExecutionStarted,
-        CallExecuted: CallExecuted,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -113,37 +108,6 @@ mod Account {
     struct SessionKeyRevoked {
         #[key]
         session_key: felt252,
-    }
-
-    #[derive(Drop, starknet::Event)]
-    struct DebugEvent {
-        #[key]
-        message: felt252,
-    }
-
-    #[derive(Drop, starknet::Event)]
-    struct SignatureValidation {
-        signature_length: u32,
-        validation_path: felt252,
-    }
-
-    #[derive(Drop, starknet::Event)]
-    struct SessionValidationResult {
-        session_pubkey: felt252,
-        result: felt252,
-    }
-
-    #[derive(Drop, starknet::Event)]
-    struct ExecutionStarted {
-        calls_count: u32,
-        source: felt252,
-    }
-
-    #[derive(Drop, starknet::Event)]
-    struct CallExecuted {
-        call_index: u32,
-        target: starknet::ContractAddress,
-        success: bool,
     }
 
     #[constructor]
@@ -177,13 +141,6 @@ mod Account {
             let tx_info = get_tx_info().unbox();
             let signature = tx_info.signature;
             let caller = get_caller_address();
-            let version = tx_info.version;
-
-            // Debug: Emit signature length and version
-            self.emit(DebugEvent { message: 'sig_len' });
-            self.emit(DebugEvent { message: signature.len().into() });
-            self.emit(DebugEvent { message: 'version' });
-            self.emit(DebugEvent { message: version });
 
             // Self-calls routed via __execute__ carry no tx signature
             // SECURITY: Only allow empty signatures if caller is the account itself
@@ -191,69 +148,50 @@ mod Account {
                 if caller == get_contract_address() {
                     return starknet::VALIDATED;
                 } else {
-                    // Reject empty signatures from external callers
                     return 0;
                 }
             }
 
-            // ✅ FIX: Handle session signatures FIRST, regardless of version
-            // Session path: 4-elt signature [session_pubkey, r, s, valid_until]
+            // Session path: 4-element signature [session_pubkey, r, s, valid_until]
             // Works with both v1 (Paymaster) and v3 (standard) transactions
             if signature.len() == 4 {
-                self.emit(DebugEvent { message: 'session_path' });
                 let session_pubkey = *signature.at(0);
                 let r = *signature.at(1);
                 let s = *signature.at(2);
                 let valid_until: u64 = (*signature.at(3)).try_into().unwrap();
 
-                // Debug: Check timestamp
+                // Check timestamp expiration
                 if get_block_timestamp() > valid_until {
-                    // Debug: Emit event for timestamp failure
-                    self.emit(DebugEvent { message: 'timestamp_failed' });
                     return 0;
                 }
                 
-                // Debug: Check session permissions
+                // Check session permissions
                 if !self._is_session_allowed_for_calls(session_pubkey, calls.span()) {
-                    // Debug: Emit event for permission failure
-                    self.emit(DebugEvent { message: 'permission_failed' });
                     return 0;
                 }
 
-                // Match the front-end's poseidon message layout
+                // Compute message hash matching frontend's poseidon layout
                 let msg_hash = self._session_message_hash(calls.span(), valid_until);
                 
-                // Debug: Check signature
+                // Verify ECDSA signature
                 if check_ecdsa_signature(msg_hash, session_pubkey, r, s) {
-                    // Only increment counter after valid signature
                     self._consume_session_call(session_pubkey);
-                    // Debug: Emit event for success
-                    self.emit(DebugEvent { message: 'signature_valid' });
                     return starknet::VALIDATED;
                 } else {
-                    // Debug: Emit event for signature failure
-                    self.emit(DebugEvent { message: 'signature_failed' });
                     return 0;
                 }
             }
 
-            // Owner path: 2-elt signature → delegate to OZ (handles tx v1 and v3 hashing)
+            // Owner path: 2-element signature → delegate to OpenZeppelin
             // AccountComponent handles both v1 (Paymaster) and v3 (standard) transactions
             if signature.len() == 2 {
-                self.emit(DebugEvent { message: 'owner_path' });
                 return self.account.validate_transaction();
             }
 
-            // If we reach here, validation failed
-            self.emit(DebugEvent { message: 'validation_failed' });
             0
         }
 
         fn __execute__(ref self: ContractState, calls: Array<Call>) -> Array<Span<felt252>> {
-            self.emit(ExecutionStarted { 
-                calls_count: calls.len(), 
-                source: '__execute__' 
-            });
             self._execute_calls(calls)
         }
 
@@ -292,10 +230,6 @@ mod Account {
             hash: felt252,
             signature: Array<felt252>
         ) -> bool {
-            // DEBUG: Log signature length for OutsideExecution
-            // Note: This will only appear if validate_signature is called from execute_from_outside_v2
-            // We can't emit events from trait impl, so we rely on the signature length check
-            
             // Owner signature (2 elements)
             if signature.len() == 2 {
                 let public_key = self.account.get_public_key();
@@ -483,12 +417,6 @@ mod Account {
         hash: felt252, 
         signature: Array<felt252>
     ) -> felt252 {
-        self.emit(SignatureValidation { 
-            signature_length: signature.len(), 
-            validation_path: 'is_valid_sig' 
-        });
-        
-        // Delegate to internal validation (shared with OutsideExecution)
         self._validate_signature_internal(hash, signature)
     }
 
@@ -651,73 +579,6 @@ mod Account {
             self.session_keys.write(session_key, session);
         }
 
-        /// Validate session for multiple calls
-        fn _validate_session_for_calls(
-            ref self: ContractState,
-            session_key: felt252,
-            calls: Span<Call>
-        ) -> bool {
-            let mut session = self.session_keys.read(session_key);
-            
-            // Check if session exists (valid_until > 0 means session was added)
-            if session.valid_until == 0 {
-                return false;
-            }
-            
-            // Check if session is expired
-            if get_block_timestamp() > session.valid_until {
-                return false;
-            }
-            
-            // Check if max calls exceeded
-            if session.calls_used >= session.max_calls {
-                return false;
-            }
-
-            // If no entrypoints specified, allow all
-            if session.allowed_entrypoints_len == 0 {
-                session.calls_used += 1;
-                self.session_keys.write(session_key, session);
-                return true;
-            }
-
-            // Check if all call selectors are allowed
-            let mut i = 0;
-            loop {
-                if i >= calls.len() {
-                    break;
-                }
-                let call = calls.at(i);
-                let selector = *call.selector;
-                
-                // Check if this selector is in the allowed list
-                let mut j = 0;
-                let mut found = false;
-                loop {
-                    if j >= session.allowed_entrypoints_len {
-                        break;
-                    }
-                    let allowed = self._load_entrypoint(session_key, j);
-                    if allowed == selector {
-                        found = true;
-                        break;
-                    }
-                    j += 1;
-                };
-
-                if !found {
-                    return false;
-                }
-                
-                i += 1;
-            };
-
-            // All selectors are allowed, increment calls used
-            session.calls_used += 1;
-            self.session_keys.write(session_key, session);
-            true
-        }
-
         /// Compute message hash for session signature
         fn _session_message_hash(
             self: @ContractState,
@@ -765,7 +626,6 @@ mod Account {
         /// Execute calls and return results
         fn _execute_calls(ref self: ContractState, mut calls: Array<Call>) -> Array<Span<felt252>> {
             let mut res = array![];
-            let mut call_index = 0_u32;
             loop {
                 match calls.pop_front() {
                     Option::Some(call) => {
@@ -773,24 +633,13 @@ mod Account {
                             call.to, call.selector, call.calldata
                         ) {
                             Result::Ok(ret) => {
-                                self.emit(CallExecuted { 
-                                    call_index, 
-                                    target: call.to, 
-                                    success: true 
-                                });
                                 res.append(ret);
                             },
                             Result::Err(_) => {
-                                self.emit(CallExecuted { 
-                                    call_index, 
-                                    target: call.to, 
-                                    success: false 
-                                });
                                 let mut err = array![];
                                 res.append(err.span());
                             }
                         }
-                        call_index += 1;
                     },
                     Option::None => { break; },
                 }

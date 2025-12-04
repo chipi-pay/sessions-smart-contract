@@ -1,17 +1,40 @@
 use starknet::ContractAddress;
 use starknet::account::Call;
-use starknet::testing::{set_contract_address, set_block_timestamp, set_transaction_hash, set_chain_id};
+use starknet::testing::*;
+use starknet::get_tx_info;
+use core::poseidon::poseidon_hash_span;
 use snforge_std_deprecated::{
     declare, ContractClassTrait, DeclareResultTrait,
     start_cheat_caller_address, stop_cheat_caller_address,
     start_cheat_signature_global, stop_cheat_signature_global,
-    start_cheat_block_timestamp_global, spy_events, EventSpyAssertionsTrait
+    start_cheat_block_timestamp_global, spy_events
 };
 
 // Import the contract interface
 use sessions_smart_contract::account::{
     ISessionKeyManagerDispatcher, ISessionKeyManagerDispatcherTrait
 };
+use sessions_smart_contract::outside_execution::{
+    OutsideExecution,
+    IOutsideExecutionDispatcher, IOutsideExecutionDispatcherTrait,
+    CALL_TYPE_HASH, OUTSIDE_EXECUTION_TYPE_HASH, STARKNET_DOMAIN_TYPE_HASH
+};
+
+// Minimal test interface to reach account entrypoints not exported as ABI traits
+#[starknet::interface]
+trait IAccountTest<TContractState> {
+    fn __validate__(ref self: TContractState, calls: Array<Call>) -> felt252;
+    fn compute_session_message_hash(
+        self: @TContractState,
+        calls: Array<Call>,
+        valid_until: u64
+    ) -> felt252;
+    fn get_outside_execution_message_hash_rev_1(
+        self: @TContractState,
+        outside_execution: OutsideExecution
+    ) -> felt252;
+    fn is_valid_signature(self: @TContractState, hash: felt252, signature: Array<felt252>) -> felt252;
+}
 
 // Test constants
 const OWNER_PUBKEY: felt252 = 0x123456789abcdef123456789abcdef123456789abcdef123456789abcdef;
@@ -602,6 +625,218 @@ fn test_empty_signature_fails() {
     stop_cheat_signature_global();
     
     // Test passes: Empty signature handled correctly
+}
+
+#[test]
+fn test_compute_session_message_hash_matches_manual() {
+    let (account_address, _session_manager) = deploy_account();
+    let account = IAccountTestDispatcher { contract_address: account_address };
+
+    let tx_info = get_tx_info().unbox();
+    let chain_id: felt252 = tx_info.chain_id;
+    let nonce: felt252 = tx_info.nonce;
+    let valid_until: u64 = 5000;
+
+    let target: ContractAddress = 0x1111.try_into().unwrap();
+    let calldata = array![1, 2, 3];
+    let calls = array![
+        Call { to: target, selector: TRANSFER_SELECTOR, calldata: calldata.span() }
+    ];
+
+    let onchain_hash = account.compute_session_message_hash(calls, valid_until);
+
+    // Manual recomputation mirrors _session_message_hash layout
+    let mut hash_data = array![];
+    hash_data.append(account_address.into());              // contract address
+    hash_data.append(chain_id);                            // chain id
+    hash_data.append(nonce);                               // nonce from tx info
+    hash_data.append(valid_until.into());                  // valid until
+    hash_data.append(target.into());                       // call.to
+    hash_data.append(TRANSFER_SELECTOR);                   // call.selector
+    hash_data.append(3);                                   // calldata length
+    hash_data.append(1);
+    hash_data.append(2);
+    hash_data.append(3);
+
+    let expected_hash = poseidon_hash_span(hash_data.span());
+    assert(onchain_hash == expected_hash, 'session hash mismatch');
+}
+
+#[test]
+fn test_outside_execution_hash_matches_manual() {
+    let (account_address, _session_manager) = deploy_account();
+    let account = IAccountTestDispatcher { contract_address: account_address };
+
+    let chain_id: felt252 = get_tx_info().unbox().chain_id;
+
+    let target: ContractAddress = 0x2222.try_into().unwrap();
+    let call = Call { to: target, selector: WAVE_SELECTOR, calldata: array![].span() };
+    let calls_array = array![call];
+    let outside_execution = OutsideExecution {
+        caller: account_address,
+        nonce: 0x55,
+        execute_after: 0,
+        execute_before: 1000,
+        calls: calls_array.span(),
+    };
+
+    let onchain_hash = account.get_outside_execution_message_hash_rev_1(outside_execution);
+
+    // Manual domain hash
+    let mut domain_data = array![];
+    domain_data.append(STARKNET_DOMAIN_TYPE_HASH);
+    domain_data.append('Account.execute_from_outside');
+    domain_data.append(2);
+    domain_data.append(chain_id);
+    domain_data.append(1);
+    let domain_hash = poseidon_hash_span(domain_data.span());
+
+    // Manual call hash (felt* pre-hash of empty calldata uses poseidon_hash_span on empty array)
+    let calldata_hash = poseidon_hash_span(array![].span());
+    let mut call_data = array![];
+    call_data.append(CALL_TYPE_HASH);
+    call_data.append(target.into());
+    call_data.append(WAVE_SELECTOR);
+    call_data.append(calldata_hash);
+    let call_hash = poseidon_hash_span(call_data.span());
+
+    // Calls array hash
+    let calls_array_hash = poseidon_hash_span(array![call_hash].span());
+
+    // Struct hash
+    let mut struct_data = array![];
+    struct_data.append(OUTSIDE_EXECUTION_TYPE_HASH);
+    struct_data.append(account_address.into());
+    struct_data.append(0x55);
+    struct_data.append(0);
+    struct_data.append(1000);
+    struct_data.append(calls_array_hash);
+    let struct_hash = poseidon_hash_span(struct_data.span());
+
+    // Final typed data hash
+    let mut final_data = array![];
+    final_data.append('StarkNet Message');
+    final_data.append(domain_hash);
+    final_data.append(account_address.into());
+    final_data.append(struct_hash);
+    let expected_hash = poseidon_hash_span(final_data.span());
+
+    assert(onchain_hash == expected_hash, 'oe hash mismatch');
+}
+
+#[test]
+fn test_validate_session_expired_returns_zero() {
+    let (account_address, session_manager) = deploy_account();
+    let account = IAccountTestDispatcher { contract_address: account_address };
+
+    // Add session as owner
+    start_cheat_caller_address(account_address, account_address);
+    let current_time = 1000000_u64;
+    start_cheat_block_timestamp_global(current_time);
+    let valid_until = current_time + 10;
+    session_manager.add_or_update_session_key(
+        SESSION_PUBKEY,
+        valid_until,
+        5,
+        array![TRANSFER_SELECTOR]
+    );
+    stop_cheat_caller_address(account_address);
+
+    // Expire the session
+    start_cheat_block_timestamp_global(valid_until + 1);
+    let session_signature = array![SESSION_PUBKEY, VALID_R, VALID_S, valid_until.into()];
+    start_cheat_signature_global(session_signature.span());
+
+    let calls = array![
+        Call { to: account_address, selector: TRANSFER_SELECTOR, calldata: array![].span() }
+    ];
+    let res = account.__validate__(calls);
+    assert(res == 0, 'session expired');
+
+    stop_cheat_signature_global();
+}
+
+#[test]
+fn test_validate_session_blocks_disallowed_selector() {
+    let (account_address, session_manager) = deploy_account();
+    let account = IAccountTestDispatcher { contract_address: account_address };
+
+    start_cheat_caller_address(account_address, account_address);
+    let current_time = 2000000_u64;
+    start_cheat_block_timestamp_global(current_time);
+    let valid_until = current_time + 500;
+    session_manager.add_or_update_session_key(
+        SESSION_PUBKEY,
+        valid_until,
+        5,
+        array![WAVE_SELECTOR]  // Only WAVE allowed
+    );
+    stop_cheat_caller_address(account_address);
+
+    // Within validity window
+    start_cheat_block_timestamp_global(current_time + 1);
+    let session_signature = array![SESSION_PUBKEY, VALID_R, VALID_S, valid_until.into()];
+    start_cheat_signature_global(session_signature.span());
+
+    // Call with selector not in allowed list
+    let calls = array![
+        Call {
+            to: account_address,
+            selector: TRANSFER_SELECTOR,
+            calldata: array![].span()
+        }
+    ];
+    let res = account.__validate__(calls);
+    assert(res == 0, 'selector blocked');
+
+    stop_cheat_signature_global();
+}
+
+#[test]
+fn test_is_valid_signature_owner_vs_session_paths() {
+    let (account_address, _session_manager) = deploy_account();
+    let account = IAccountTestDispatcher { contract_address: account_address };
+
+    // Owner-style signature (len = 2) should return 0 for invalid signature
+    let owner_sig = array![VALID_R, VALID_S];
+    let owner_res = account.is_valid_signature(0x1, owner_sig);
+    assert(owner_res == 0, 'owner sig invalid');
+
+    // Session-style signature (len = 4) with valid_until in future but bad r,s returns 0
+    let now = 3000000_u64;
+    start_cheat_block_timestamp_global(now);
+    let session_sig = array![SESSION_PUBKEY, VALID_R, VALID_S, (now + 1000).into()];
+    let session_res = account.is_valid_signature(0x2, session_sig);
+    assert(session_res == 0, 'session sig invalid');
+}
+
+#[test]
+#[should_panic(expected: ('OE: Invalid signature',))]
+fn test_outside_execution_nonce_default_and_invalid_signature() {
+    let (account_address, _session_manager) = deploy_account();
+    let outside = IOutsideExecutionDispatcher { contract_address: account_address };
+
+    let nonce: felt252 = 0xABC;
+    assert(outside.is_valid_outside_execution_nonce(nonce), 'Fresh nonce should be valid');
+
+    // Invalid signature path should panic before nonce consumption
+    let target: ContractAddress = 0x3333.try_into().unwrap();
+    let calls = array![
+        Call { to: target, selector: TRANSFER_SELECTOR, calldata: array![].span() }
+    ];
+    let outside_execution = OutsideExecution {
+        caller: 0.try_into().unwrap(), // allow any caller to trigger signature failure path
+        nonce,
+        execute_after: 0,
+        execute_before: 10,
+        calls: calls.span(),
+    };
+
+    start_cheat_block_timestamp_global(1);
+    let bad_signature = array![VALID_R]; // Wrong length triggers INVALID_SIGNATURE
+
+    // Expect revert due to invalid signature (NONCE_USED should remain false because of revert)
+    outside.execute_from_outside_v2(outside_execution, bad_signature);
 }
 
 

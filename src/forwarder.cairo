@@ -141,23 +141,9 @@ pub mod Forwarder {
             let _caller = get_caller_address();
             assert(self.whitelist.is_whitelisted(_caller), 'Caller is not whitelisted');
 
-            // 🔍 DEBUG: Emit event BEFORE call
-            self.emit(DebugCall {
-                account: account_address,
-                entrypoint: entrypoint,
-                calldata_len: calldata.len(),
-            });
-
             // Execute the call
             let result = call_contract_syscall(account_address, entrypoint, calldata.span());
-            
-            // 🔍 DEBUG: Emit event AFTER call (before unwrap)
-            if result.is_ok() {
-                self.emit(DebugCallResult { success: true });
-            } else {
-                self.emit(DebugCallResult { success: false });
-            }
-            
+
             result.unwrap_syscall();
 
             // Emit event
