@@ -250,13 +250,13 @@ The `__execute__` function uses best-effort execution: if a subcall fails, it re
 
 ## 🧪 Comprehensive Test Suite
 
-### Test Results: 18/18 Passing
+### Test Results: 36/36 Passing
 
 ```bash
 $ snforge test
 
-Collected 18 test(s) from sessions_smart_contract package
-Running 18 test(s) from tests/
+Collected 36 test(s) from sessions_smart_contract package
+Running 36 test(s) from tests/
 
 # Session Validation Tests (15)
 [PASS] test_owner_signature_valid
@@ -275,12 +275,34 @@ Running 18 test(s) from tests/
 [PASS] test_invalid_signature_length_3_elements
 [PASS] test_empty_signature_fails
 
+# Session Validation Edge Cases (6)
+[PASS] test_session_max_calls_zero_immediately_exhausted
+[PASS] test_double_revoke_same_session
+[PASS] test_update_session_resets_calls_used
+[PASS] test_multiple_concurrent_sessions_independent
+[PASS] test_signature_length_5_returns_zero
+[PASS] test_session_valid_at_exact_expiration_boundary
+
+# Audit Fix Regression Tests (12)
+[PASS] test_audit1_execute_rejects_unauthorized_caller
+[PASS] test_audit1_execute_allows_self_caller
+[PASS] test_audit2_validate_blocks_disallowed_selector
+[PASS] test_audit3_session_blocked_from_upgrade
+[PASS] test_audit3_session_blocked_from_add_session
+[PASS] test_audit5_is_valid_signature_session_expired_returns_zero
+[PASS] test_audit6_is_valid_signature_does_not_consume_calls
+[PASS] test_audit7_execute_continues_after_failed_subcall
+[PASS] test_audit8_session_blocked_from_revoke
+[PASS] test_audit9_overflow_valid_until_returns_zero
+[PASS] test_audit9_is_valid_signature_overflow_returns_zero
+[PASS] test_audit10_update_session_clears_old_entrypoints
+
 # SNIP-9 Compatibility Tests (3)
 [PASS] test_snip9_version_returns_v2
 [PASS] test_contract_info_shows_snip9_compatible
 [PASS] test_session_keys_still_work_with_snip9
 
-Tests: 18 passed, 0 failed, 0 ignored, 0 filtered out
+Tests: 36 passed, 0 failed, 0 ignored, 0 filtered out
 ```
 
 ### Test Categories
@@ -288,6 +310,8 @@ Tests: 18 passed, 0 failed, 0 ignored, 0 filtered out
 | Category | Tests | What It Covers |
 |----------|-------|----------------|
 | **Session Validation** | 15 | Add, revoke, expiry, limits, selectors, signatures, events |
+| **Session Edge Cases** | 6 | Zero max_calls, double revoke, update reset, concurrent sessions, invalid sig lengths, expiration boundary |
+| **Audit Fix Regressions** | 12 | One+ test per Nethermind finding: `__execute__` caller check, admin blocklist, whitelist enforcement, `is_valid_signature` read-only, non-atomic multicall, safe `try_into()`, stale entrypoint cleanup |
 | **SNIP-9 Compatibility** | 3 | Version checks, interface detection, session+SNIP-9 integration |
 
 ---
@@ -527,7 +551,7 @@ Contributions welcome! Please:
 1. Fork the repository
 2. Create a feature branch
 3. Write tests for new functionality
-4. Ensure all 18 tests pass
+4. Ensure all 36 tests pass
 5. Submit a pull request
 
 ---

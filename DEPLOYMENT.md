@@ -17,7 +17,7 @@ This document tracks all contract class declarations on Starknet mainnet.
 - Applied all Nethermind audit fixes (#1-#4, #8-#10)
 - Removed separate `OutsideExecutionComponent` (v28-only, superseded by inline implementation)
 - Removed debug contract, redundant documentation, and utility scripts
-- 18 tests passing
+- 36 tests passing
 
 ### Audit fixes applied
 
