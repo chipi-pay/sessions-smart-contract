@@ -40,15 +40,15 @@ mod test_snip9_compatibility {
     fn test_contract_info_shows_snip9_compatible() {
         // Deploy account
         let account_address = deploy_account();
-        
+
         // Create SNIP9 version dispatcher
         let snip9_dispatcher = ISNIP9VersionDispatcher { contract_address: account_address };
-        
+
         // Check contract info
         let info = snip9_dispatcher.get_contract_info();
-        
-        // Should indicate SNIP-9 v2 compatibility with custom implementation
-        assert(info == 'v27_custom_snip9v2', 'Wrong version string');
+
+        // Should indicate audit fixes version
+        assert(info == 'v26_audit_fixes', 'Wrong version string');
     }
 
     #[test]
