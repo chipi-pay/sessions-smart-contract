@@ -32,15 +32,35 @@ A production-ready Cairo smart contract that combines **session keys** with **SN
 
 | Field | Value |
 |-------|-------|
-| **Class Hash** | `0x2de1565226d5215a38b68c4d9a4913989b54edff64c68c45e453c417b44cd83` |
+| **Class Hash** | `0x53f4f8791ed5bed0fddaa553d180c664e32cfaf8316bb232ae77bb08f459f2a` |
 | **Network** | Starknet Mainnet |
-| **Version** | v28 (Production Cleaned) |
-| **Starkscan** | [View Contract Class](https://starkscan.co/class/0x02de1565226d5215a38b68c4d9a4913989b54edff64c68c45e453c417b44cd83) |
+| **Version** | v29 (Audit-Compliant) |
+| **Audit** | Nethermind AuditAgent — January 2026 |
+| **Starkscan** | [View Contract Class](https://starkscan.co/class/0x053f4f8791ed5bed0fddaa553d180c664e32cfaf8316bb232ae77bb08f459f2a) |
+
+---
+
+## 🔍 Security Audit
+
+This contract was audited by **Nethermind AuditAgent** in January 2026. The audit identified 10 findings across the session key and outside execution logic. All valid findings have been fixed in this version:
+
+| Severity | Findings | Status |
+|----------|----------|--------|
+| High | 5 | 3 fixed, 1 disputed (sequencer architecture), 1 accepted tradeoff |
+| Medium | 2 | 1 invalid (false positive), 1 by design |
+| Low | 1 | Fixed |
+| Best Practice | 2 | Fixed |
+
+**Key fixes applied**: session whitelist enforcement across all entry points, call-limit reset protection, session self-revocation guard, safe felt252-to-u64 conversion, and stale entrypoint cleanup.
+
+Full report: [audit/nethermind-audit-2026-01.pdf](audit/nethermind-audit-2026-01.pdf)
+Detailed responses: [AUDIT_RESPONSE.md](AUDIT_RESPONSE.md)
 
 ---
 
 ## 📖 Table of Contents
 
+- [Security Audit](#-security-audit)
 - [Why Custom SNIP-9?](#-why-we-built-our-own-snip-9)
 - [Paymaster Integration](#-paymaster-integration)
 - [Security Architecture](#-security-architecture)
@@ -63,7 +83,7 @@ OpenZeppelin's `SRC9Component` uses **SNIP-12 Revision 0** for typed data hashin
 
 ### Our Solution
 
-We implemented a **custom SNIP-9 v2 component** with:
+We use OpenZeppelin's `SRC9Component` but override `execute_from_outside_v2` with a **custom inline implementation** that adds session key support and SNIP-12 Rev 1 hashing:
 
 ```cairo
 // SNIP-12 Revision 1 Type Hashes (matching starknet.js)
@@ -196,9 +216,10 @@ await paymaster.executeFromOutside(accountAddress, outsideExecution, signature);
 1. Check session exists (valid_until > 0)
 2. Check not expired (block_timestamp ≤ valid_until)
 3. Check calls remaining (calls_used < max_calls)
-4. Check selector allowed (if whitelist exists)
-5. Verify ECDSA signature
-6. Increment calls_used counter
+4. Block admin selectors (upgrade, add/revoke session)
+5. Check selector allowed (if whitelist exists)
+6. Verify ECDSA signature
+7. Increment calls_used counter
     ↓
 Transaction authorized
 ```
@@ -211,29 +232,33 @@ Transaction authorized
 | **No Cross-Chain Replay** | Chain ID included in message hash |
 | **No Account Confusion** | Account address included in message hash |
 | **No Privilege Escalation** | Sessions can only call whitelisted functions |
+| **No Admin Access** | Sessions blocked from upgrade/add/revoke selectors regardless of whitelist |
 | **No Indefinite Access** | Sessions have mandatory expiration |
 | **No Runaway Usage** | Call limits prevent abuse of compromised keys |
 
-### What We Removed in v28
+### Non-Atomic Multicall (By Design)
 
-We removed debug events for production cleanliness:
-- ❌ `DebugEvent`, `SignatureValidation`, `SessionValidationResult`
-- ❌ `ExecutionStarted`, `CallExecuted`, `OutsideExecutionValidation`
-- ✅ Kept essential events: `SessionKeyAdded`, `SessionKeyRevoked`, `OutsideExecutionExecuted`
+The `__execute__` function uses best-effort execution: if a subcall fails, it returns an empty span for that call and continues. This is intentional — callers should check the results array for empty spans to detect partial failures. This differs from the atomic all-or-nothing pattern used by some account implementations.
+
+### Production Hardening (v29)
+
+- All Nethermind audit fixes applied (findings #1-#4, #8-#10)
+- Debug events and debug contract removed
+- Essential events only: `SessionKeyAdded`, `SessionKeyRevoked`, `OutsideExecutionExecuted`
 
 ---
 
 ## 🧪 Comprehensive Test Suite
 
-### Test Results: 44/44 Passing ✅
+### Test Results: 18/18 Passing
 
 ```bash
 $ snforge test
 
-Collected 44 test(s) from sessions_smart_contract package
-Running 44 test(s) from tests/
+Collected 18 test(s) from sessions_smart_contract package
+Running 18 test(s) from tests/
 
-# Session Validation Tests (21)
+# Session Validation Tests (15)
 [PASS] test_owner_signature_valid
 [PASS] test_session_signature_valid
 [PASS] test_session_expired
@@ -249,53 +274,21 @@ Running 44 test(s) from tests/
 [PASS] test_upgrade_still_owner_only
 [PASS] test_invalid_signature_length_3_elements
 [PASS] test_empty_signature_fails
-[PASS] test_compute_session_message_hash_matches_manual
-[PASS] test_outside_execution_hash_matches_manual
-[PASS] test_validate_session_expired_returns_zero
-[PASS] test_validate_session_blocks_disallowed_selector
-[PASS] test_is_valid_signature_owner_vs_session_paths
-[PASS] test_outside_execution_nonce_default_and_invalid_signature
 
 # SNIP-9 Compatibility Tests (3)
 [PASS] test_snip9_version_returns_v2
 [PASS] test_contract_info_shows_snip9_compatible
 [PASS] test_session_keys_still_work_with_snip9
 
-# Hash Computation Tests (7)
-[PASS] test_starknet_domain_type_hash_is_correct
-[PASS] test_call_type_hash_is_correct
-[PASS] test_outside_execution_type_hash_is_correct
-[PASS] test_outside_execution_hash_deterministic
-[PASS] test_outside_execution_hash_changes_with_nonce
-[PASS] test_outside_execution_hash_changes_with_caller
-[PASS] test_outside_execution_nonce_validity
-
-# Outside Execution Tests (13)
-[PASS] test_fresh_nonce_is_valid
-[PASS] test_zero_nonce_is_valid
-[PASS] test_message_hash_computation
-[PASS] test_message_hash_includes_calls
-[PASS] test_message_hash_includes_timestamps
-[PASS] test_message_hash_with_multiple_calls
-[PASS] test_message_hash_with_empty_calls
-[PASS] test_any_caller_address_is_zero
-[PASS] test_session_key_added_for_outside_execution
-[PASS] test_timestamp_boundary_execute_after_equals_current
-[PASS] test_timestamp_boundary_execute_before_equals_current
-[PASS] test_large_nonce_value
-[PASS] test_large_calldata
-
-Tests: 44 passed, 0 failed, 0 ignored, 0 filtered out
+Tests: 18 passed, 0 failed, 0 ignored, 0 filtered out
 ```
 
 ### Test Categories
 
 | Category | Tests | What It Covers |
 |----------|-------|----------------|
-| **Session Validation** | 21 | Add, revoke, expiry, limits, selectors, signatures |
-| **SNIP-9 Compatibility** | 3 | Version checks, interface detection |
-| **Hash Computation** | 7 | SNIP-12 type hashes, determinism |
-| **Outside Execution** | 13 | Nonces, timestamps, callers, boundaries |
+| **Session Validation** | 15 | Add, revoke, expiry, limits, selectors, signatures, events |
+| **SNIP-9 Compatibility** | 3 | Version checks, interface detection, session+SNIP-9 integration |
 
 ---
 
@@ -449,7 +442,7 @@ snfoundryup
 
 ```bash
 # Clone repository
-git clone https://github.com/your-repo/sessions-smart-contract.git
+git clone https://github.com/chipi-pay/sessions-smart-contract.git
 cd sessions-smart-contract
 
 # Build
@@ -467,7 +460,7 @@ sncast declare --contract-name Account --network mainnet
 
 # Deploy with your public key
 sncast deploy \
-  --class-hash 0x2de1565226d5215a38b68c4d9a4913989b54edff64c68c45e453c417b44cd83 \
+  --class-hash 0x53f4f8791ed5bed0fddaa553d180c664e32cfaf8316bb232ae77bb08f459f2a \
   --constructor-calldata YOUR_PUBLIC_KEY \
   --network mainnet
 ```
@@ -484,7 +477,7 @@ fn add_or_update_session_key(
     session_key: felt252,              // Public key of session
     valid_until: u64,                  // Expiration timestamp
     max_calls: u32,                    // Maximum transactions
-    allowed_entrypoints: Array<felt252> // Whitelisted selectors (empty = all)
+    allowed_entrypoints: Array<felt252> // Whitelisted selectors (empty = all non-admin)
 );
 
 // Revoke a session key (owner only)
@@ -534,7 +527,7 @@ Contributions welcome! Please:
 1. Fork the repository
 2. Create a feature branch
 3. Write tests for new functionality
-4. Ensure all 38 tests pass
+4. Ensure all 18 tests pass
 5. Submit a pull request
 
 ---

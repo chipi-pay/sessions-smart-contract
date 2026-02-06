@@ -1,10 +1,13 @@
 # Nethermind Security Audit Response
 
 ## Audit Information
-- **Auditor**: Nethermind AuditAgent
+- **Auditor**: Nethermind AuditAgent (powered by Nethermind Security)
 - **Date**: January 23, 2026
-- **Commit**: 628a5122...0c4f71aa
-- **Contracts**: src/account.cairo, src/lib.cairo
+- **Commit audited**: 628a5122...0c4f71aa (v28)
+- **Contracts in scope**: src/account.cairo, src/lib.cairo, src/outside_execution.cairo
+- **Full report**: [audit/nethermind-audit-2026-01.pdf](audit/nethermind-audit-2026-01.pdf)
+
+> **Note**: The audit was performed on the v28 codebase which had a separate `OutsideExecutionComponent` in `src/outside_execution.cairo`. All valid findings were fixed in the v26.3 architecture (production class hash `0x53f4f87...`), where outside execution logic is implemented inline in `src/account.cairo` using OpenZeppelin's `SRC9Component` with a custom `execute_from_outside_v2` override.
 
 ## Summary
 

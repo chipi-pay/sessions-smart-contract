@@ -114,7 +114,7 @@ source = "git+https://github.com/OpenZeppelin/cairo-contracts.git?tag=v2.0.0#f1c
 
 [[package]]
 name = "sessions_smart_contract"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "avnu_lib",
  "openzeppelin",
