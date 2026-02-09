@@ -398,7 +398,7 @@ Future extensions to this SNIP MAY add optional calldata constraints (e.g., maxi
 
 - **Session account contract**: [github.com/chipi-pay/sessions-smart-contract](https://github.com/chipi-pay/sessions-smart-contract)
 - **Modified paymaster**: [github.com/chipi-pay](https://github.com/chipi-pay) `openzep` branch (forked from [github.com/avnu-labs/paymaster](https://github.com/avnu-labs/paymaster)) — U128 timestamps, ABI fallback, universal compatibility. Proposed upstream: [avnu-labs/paymaster#62](https://github.com/avnu-labs/paymaster/pull/62)
-- **Production class hash**: `0x72b77b033a874fa1b8f7ff52e18be8fb5ce01a00c59cd184ae15f5b29bc0e57`
+- **Production class hash**: `0x254f6dd0427319ec614c29e4e3929500d1ba95d0da87ff81d67051ce572667`
 - **Network**: Starknet Mainnet
 - **Tests**: 38 passing (21 session validation + 14 audit regression + 3 SNIP-9 compatibility)
 - **Auditor**: Nethermind (January 2026, February 2026)

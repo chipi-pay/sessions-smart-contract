@@ -47,11 +47,12 @@ mod Account {
     use core::traits::Into;
     use core::num::traits::Zero;
 
-    // SNIP-12 type hashes for Chipi Pay paymaster compatibility
-    // The paymaster uses 'felt' for Execute After/Before instead of 'u128'
+    // SNIP-12 type hashes for legacy paymaster fallback
+    // Primary path uses OZ standard (u128 timestamps via SNIP-12 Rev 1).
+    // Fallback path uses felt timestamps for older paymaster versions.
     // Computed via starknetKeccak(type_string)
     //
-    // Type hash for OutsideExecution (with felt timestamps):
+    // Fallback type hash for OutsideExecution (with felt timestamps):
     // starknetKeccak("OutsideExecution"("Caller":"ContractAddress","Nonce":"felt","Execute After":"felt","Execute Before":"felt","Calls":"Call*")"Call"(...))
     const OUTSIDE_EXECUTION_TYPE_HASH_REV1: felt252 =
         0x5a4b49e17039355cd95d1f0981d75901191d1319b1f4b05a9a791d218d7e0c;
@@ -89,7 +90,7 @@ mod Account {
 
     // SRC9 (Outside Execution) - Custom implementation with session whitelist enforcement
     // NOTE: We do NOT embed SRC9Component::OutsideExecutionV2Impl because we need to
-    // enforce session key whitelist on the actual calls BEFORE signature validation
+    // enforce session key whitelist and consume calls only AFTER signature validation
     impl SRC9InternalImpl = SRC9Component::InternalImpl<ContractState>;
 
     // SNIP-12 Metadata for Outside Execution message hashing (required for get_message_hash)
@@ -351,13 +352,15 @@ mod Account {
 
             // 4. SECURITY: For session signatures, enforce whitelist BEFORE signature validation
             // This is the key fix for audit findings #2, #4
+            let mut is_session_sig = false;
+            let mut session_pubkey: felt252 = 0;
             if signature.len() == 4 {
-                let session_pubkey = *signature.at(0);
+                is_session_sig = true;
+                session_pubkey = *signature.at(0);
                 assert(
                     self._is_session_allowed_for_calls(session_pubkey, outside_execution.calls),
                     'Session: unauthorized selector'
                 );
-                self._consume_session_call(session_pubkey);
             }
 
             // 5. Compute message hash and validate signature
@@ -389,6 +392,9 @@ mod Account {
             }
 
             assert(is_valid_signature, 'SRC9: invalid signature');
+            if is_session_sig {
+                self._consume_session_call(session_pubkey);
+            }
 
             // 6. Execute the calls
             self._execute_calls(outside_execution.calls.into())
@@ -512,8 +518,7 @@ mod Account {
     // Production-safe functions (no security vulnerabilities)
     #[external(v0)]
     fn get_contract_info(self: @ContractState) -> felt252 {
-        // Return a version identifier for production with audit fixes
-        'v26_audit_fixes'
+        'v31'
     }
 
     // SNIP-9 version check - returns 2 for SNIP-9 v2 compatibility
@@ -534,54 +539,14 @@ mod Account {
     }
 
     // ERC-1271 compatible signature validation
+    // Delegates to SRC6Impl::is_valid_signature to avoid duplicate logic
     #[external(v0)]
     fn is_valid_signature(
-        self: @ContractState, 
-        hash: felt252, 
+        self: @ContractState,
+        hash: felt252,
         signature: Array<felt252>
     ) -> felt252 {
-        // Owner path: 2-element signature [r, s]
-        if signature.len() == 2 {
-            let public_key = self.account.get_public_key();
-            let ok = check_ecdsa_signature(hash, public_key, *signature.at(0), *signature.at(1));
-            if ok { return starknet::VALIDATED; } else { return 0; }
-        }
-        
-        // Session path: 4-element signature [session_pubkey, r, s, valid_until]
-        if signature.len() == 4 {
-            let session_pubkey = *signature.at(0);
-            let r = *signature.at(1);
-            let s = *signature.at(2);
-            // SECURITY: Safe type conversion (audit fix #9)
-            let valid_until: u64 = match (*signature.at(3)).try_into() {
-                Option::Some(v) => v,
-                Option::None => { return 0; }  // Invalid timestamp format
-            };
-
-            // Check timestamp
-            if get_block_timestamp() > valid_until {
-                return 0;
-            }
-
-            // Verify session key exists and is valid
-            let session = self.session_keys.read(session_pubkey);
-            if session.valid_until == 0 {
-                return 0;
-            }
-            if get_block_timestamp() > session.valid_until {
-                return 0;
-            }
-            if session.calls_used >= session.max_calls {
-                return 0;
-            }
-
-            // Verify ECDSA signature with session key
-            let ok = check_ecdsa_signature(hash, session_pubkey, r, s);
-            if ok { return starknet::VALIDATED; } else { return 0; }
-        }
-
-        // Invalid signature format
-        0
+        SRC6Impl::is_valid_signature(self, hash, signature)
     }
 
     // Read-only session entrypoint helpers (safe)
@@ -628,6 +593,8 @@ mod Account {
             let UPGRADE_SELECTOR: felt252 = selector!("upgrade");
             let ADD_SESSION_SELECTOR: felt252 = selector!("add_or_update_session_key");
             let REVOKE_SESSION_SELECTOR: felt252 = selector!("revoke_session_key");
+            // Block __execute__ to prevent nested execution privilege escalation
+            let EXECUTE_SELECTOR: felt252 = selector!("__execute__");
 
             // First pass: check for blocked admin selectors
             let mut i = 0;
@@ -639,7 +606,8 @@ mod Account {
                 // Block admin functions regardless of whitelist
                 if sel == UPGRADE_SELECTOR
                     || sel == ADD_SESSION_SELECTOR
-                    || sel == REVOKE_SESSION_SELECTOR {
+                    || sel == REVOKE_SESSION_SELECTOR
+                    || sel == EXECUTE_SELECTOR {
                     return false;
                 }
                 i += 1;
@@ -674,73 +642,6 @@ mod Account {
             let mut session = self.session_keys.read(session_key);
             session.calls_used += 1;
             self.session_keys.write(session_key, session);
-        }
-
-        /// Validate session for multiple calls
-        fn _validate_session_for_calls(
-            ref self: ContractState,
-            session_key: felt252,
-            calls: Span<Call>
-        ) -> bool {
-            let mut session = self.session_keys.read(session_key);
-            
-            // Check if session exists (valid_until > 0 means session was added)
-            if session.valid_until == 0 {
-                return false;
-            }
-            
-            // Check if session is expired
-            if get_block_timestamp() > session.valid_until {
-                return false;
-            }
-            
-            // Check if max calls exceeded
-            if session.calls_used >= session.max_calls {
-                return false;
-            }
-
-            // If no entrypoints specified, allow all
-            if session.allowed_entrypoints_len == 0 {
-                session.calls_used += 1;
-                self.session_keys.write(session_key, session);
-                return true;
-            }
-
-            // Check if all call selectors are allowed
-            let mut i = 0;
-            loop {
-                if i >= calls.len() {
-                    break;
-                }
-                let call = calls.at(i);
-                let selector = *call.selector;
-                
-                // Check if this selector is in the allowed list
-                let mut j = 0;
-                let mut found = false;
-                loop {
-                    if j >= session.allowed_entrypoints_len {
-                        break;
-                    }
-                    let allowed = self._load_entrypoint(session_key, j);
-                    if allowed == selector {
-                        found = true;
-                        break;
-                    }
-                    j += 1;
-                };
-
-                if !found {
-                    return false;
-                }
-                
-                i += 1;
-            };
-
-            // All selectors are allowed, increment calls used
-            session.calls_used += 1;
-            self.session_keys.write(session_key, session);
-            true
         }
 
         /// Compute message hash for session signature
@@ -787,9 +688,9 @@ mod Account {
             poseidon_hash_span(hash_data.span())
         }
 
-        /// Compute SNIP-12 message hash for OutsideExecution (matching Chipi Pay paymaster format)
-        /// The paymaster uses 'felt' for timestamps instead of 'u128' (OZ default)
-        /// This function replicates the hash computation to ensure signature validation works
+        /// Compute SNIP-12 message hash for OutsideExecution using felt timestamps (legacy fallback).
+        /// The primary path uses OZ standard (u128 timestamps). This fallback handles older
+        /// paymaster versions that encode timestamps as felt instead of u128.
         fn _compute_outside_execution_hash(
             self: @ContractState,
             outside_execution: @OutsideExecution,

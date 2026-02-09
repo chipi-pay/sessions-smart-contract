@@ -47,8 +47,8 @@ mod test_snip9_compatibility {
         // Check contract info
         let info = snip9_dispatcher.get_contract_info();
 
-        // Should indicate audit fixes version
-        assert(info == 'v26_audit_fixes', 'Wrong version string');
+        // Should indicate current version
+        assert(info == 'v31', 'Wrong version string');
     }
 
     #[test]

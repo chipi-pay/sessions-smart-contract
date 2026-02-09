@@ -14,6 +14,7 @@ use snforge_std_deprecated::{
 use sessions_smart_contract::account::{
     ISessionKeyManagerDispatcher, ISessionKeyManagerDispatcherTrait
 };
+use openzeppelin::account::extensions::src9::OutsideExecution;
 
 // ---------- dispatcher interfaces for account entrypoints ----------
 
@@ -30,6 +31,15 @@ trait IAccountExecute<TContractState> {
 #[starknet::interface]
 trait IAccountSignature<TContractState> {
     fn is_valid_signature(self: @TContractState, hash: felt252, signature: Array<felt252>) -> felt252;
+}
+
+#[starknet::interface]
+trait IAccountOutsideExecution<TContractState> {
+    fn execute_from_outside_v2(
+        ref self: TContractState,
+        outside_execution: OutsideExecution,
+        signature: Array<felt252>
+    ) -> Array<Span<felt252>>;
 }
 
 #[starknet::interface]
@@ -184,6 +194,66 @@ fn test_audit8_session_blocked_from_revoke() {
 }
 
 // ===================================================================
+// New: Session must NOT be able to call __execute__ (nested execution bypass)
+// ===================================================================
+
+#[test]
+fn test_audit_new_session_blocked_from_execute() {
+    let account = deploy_account();
+    let current_time: u64 = 1_000_000;
+    start_cheat_block_timestamp_global(current_time);
+
+    let valid_until = current_time + 86400;
+    setup_session(account, SESSION_PUBKEY, valid_until, 10, array![]);
+
+    let sig = array![SESSION_PUBKEY, 0x1, 0x2, valid_until.into()];
+    start_cheat_signature_global(sig.span());
+
+    let validate = IAccountValidateDispatcher { contract_address: account };
+
+    // Call with selector!("__execute__")
+    let execute_selector: felt252 = selector!("__execute__");
+    let calls = array![
+        Call { to: account, selector: execute_selector, calldata: array![].span() }
+    ];
+
+    let result = validate.__validate__(calls);
+    assert(result == 0, 'execute blocked');
+
+    stop_cheat_signature_global();
+}
+
+// ===================================================================
+// New: execute_from_outside_v2 should not consume before validation
+// (Negative test: invalid signature must not pass validation)
+// ===================================================================
+
+#[test]
+#[should_panic(expected: ('SRC9: invalid signature',))]
+fn test_audit_new_execute_from_outside_invalid_signature_reverts() {
+    let account = deploy_account();
+    let current_time: u64 = 1_000_000;
+    start_cheat_block_timestamp_global(current_time);
+
+    let valid_until = current_time + 86400;
+    setup_session(account, SESSION_PUBKEY, valid_until, 1, array![]);
+
+    let outside = OutsideExecution {
+        caller: 0x0.try_into().unwrap(),
+        nonce: 1,
+        execute_after: 0,
+        execute_before: valid_until,
+        calls: array![
+            Call { to: account, selector: selector!("get_contract_info"), calldata: array![].span() }
+        ].span()
+    };
+
+    let exec = IAccountOutsideExecutionDispatcher { contract_address: account };
+    let sig = array![SESSION_PUBKEY, 0x1, 0x2, valid_until.into()];
+    exec.execute_from_outside_v2(outside, sig);
+}
+
+// ===================================================================
 // Finding #2 / #4 — Session whitelist in __validate__ path
 // A session restricted to WAVE_SELECTOR must reject TRANSFER_SELECTOR.
 // ===================================================================
@@ -290,10 +360,10 @@ fn test_audit7_execute_continues_after_failed_subcall() {
     // Non-atomic: both calls produce entries. First is empty span (failure), second succeeds.
     assert(result.len() == 2, 'should have 2 result entries');
 
-    // Second result should contain 'v26_audit_fixes' (the return value of get_contract_info).
+    // Second result should contain 'v31' (the return value of get_contract_info).
     let second = *result.at(1);
     assert(second.len() > 0, 'second call should succeed');
-    assert(*second.at(0) == 'v26_audit_fixes', 'wrong return value');
+    assert(*second.at(0) == 'v31', 'wrong return value');
 
     stop_cheat_caller_address(account);
 }

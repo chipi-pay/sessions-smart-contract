@@ -7,7 +7,9 @@
 - **Contracts in scope**: src/account.cairo, src/lib.cairo, src/outside_execution.cairo
 - **Full report**: [audit/nethermind-audit-2026-01.pdf](audit/nethermind-audit-2026-01.pdf)
 
-> **Note**: The audit was performed on the v28 codebase which had a separate `OutsideExecutionComponent` in `src/outside_execution.cairo`. All valid findings were fixed in the v26.3 architecture (production class hash `0x53f4f87...`), where outside execution logic is implemented inline in `src/account.cairo` using OpenZeppelin's `SRC9Component` with a custom `execute_from_outside_v2` override.
+> **Note**: The audit was performed on the v28 codebase which had a separate `OutsideExecutionComponent` in `src/outside_execution.cairo`. All valid findings were fixed in the current production architecture, where outside execution logic is implemented inline in `src/account.cairo` using OpenZeppelin's `SRC9Component` with a custom `execute_from_outside_v2` override.
+>
+> **Update (February 2026)**: A second audit ([AUDIT_RESPONSE_2.md](AUDIT_RESPONSE_2.md)) found that `_consume_session_call` was called before signature validation in `execute_from_outside_v2`. This has been fixed in v31. The code snippets below reflect the audit 1 response as originally written.
 
 ## Summary
 
@@ -77,7 +79,7 @@ fn execute_from_outside_v2(...) {
 }
 ```
 
-**Verified on mainnet**: [TX 0x7ba00f...](https://starkscan.co/tx/0x7ba00f0d799e01f6dd6cf963f9e59d6ca0949a918e39d7a473ef910000f5a6e)
+**Verified on mainnet**: [TX 0x7ba00f...](https://voyager.online/tx/0x7ba00f0d799e01f6dd6cf963f9e59d6ca0949a918e39d7a473ef910000f5a6e)
 
 ---
 
@@ -197,8 +199,8 @@ All fixes verified on Starknet mainnet:
 
 | Test | Transaction |
 |------|-------------|
-| SNIP-9 Session (whitelist enforced) | [0x7ba00f...](https://starkscan.co/tx/0x7ba00f0d799e01f6dd6cf963f9e59d6ca0949a918e39d7a473ef910000f5a6e) |
-| Paymaster Owner Signature | [0x8520db...](https://starkscan.co/tx/0x8520db3c33777f3efbbf1e0c8255bd1c5acf4c6a4c88afd01fefbadbd0e8b) |
-| Paymaster Session Signature | [0x4f0e4d...](https://starkscan.co/tx/0x4f0e4dd3bc3c172ed6151f270b1ea7385eefa334017d9502d470aaa2b639361) |
+| SNIP-9 Session (whitelist enforced) | [0x7ba00f...](https://voyager.online/tx/0x7ba00f0d799e01f6dd6cf963f9e59d6ca0949a918e39d7a473ef910000f5a6e) |
+| Paymaster Owner Signature | [0x8520db...](https://voyager.online/tx/0x8520db3c33777f3efbbf1e0c8255bd1c5acf4c6a4c88afd01fefbadbd0e8b) |
+| Paymaster Session Signature | [0x4f0e4d...](https://voyager.online/tx/0x4f0e4dd3bc3c172ed6151f270b1ea7385eefa334017d9502d470aaa2b639361) |
 
-**Production Contract**: `0x53f4f8791ed5bed0fddaa553d180c664e32cfaf8316bb232ae77bb08f459f2a` (v26.3)
+**Production Contract**: `0x03062f8ec52749beae94daee793871e60a4f71fdee577e9d9fb0c61260024806` (v31 pending — see [DEPLOYMENT.md](DEPLOYMENT.md))

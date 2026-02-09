@@ -32,11 +32,12 @@ A production-ready Cairo smart contract that combines **session keys** with **SN
 
 | Field | Value |
 |-------|-------|
-| **Class Hash** | `0x53f4f8791ed5bed0fddaa553d180c664e32cfaf8316bb232ae77bb08f459f2a` |
+| **Class Hash** | `0x254f6dd0427319ec614c29e4e3929500d1ba95d0da87ff81d67051ce572667` |
+| **Contract Address** | `0x03062f8ec52749beae94daee793871e60a4f71fdee577e9d9fb0c61260024806` |
 | **Network** | Starknet Mainnet |
-| **Version** | v29 (Audit-Compliant) |
-| **Audit** | Nethermind AuditAgent — January 2026 |
-| **Starkscan** | [View Contract Class](https://starkscan.co/class/0x053f4f8791ed5bed0fddaa553d180c664e32cfaf8316bb232ae77bb08f459f2a) |
+| **Version** | v31 (Audit 1 + 2 Compliant) |
+| **Audit** | Nethermind AuditAgent — January & February 2026 |
+| **Voyager** | [View Contract Class](https://voyager.online/class/0x00254f6dd0427319ec614c29e4e3929500d1ba95d0da87ff81d67051ce572667) |
 
 ---
 
@@ -56,6 +57,19 @@ This contract was audited by **Nethermind AuditAgent** in January 2026. The audi
 Full report: [audit/nethermind-audit-2026-01.pdf](audit/nethermind-audit-2026-01.pdf)
 Detailed responses: [AUDIT_RESPONSE.md](AUDIT_RESPONSE.md)
 
+### Audit 2 — February 2026
+
+A second Nethermind AuditAgent scan was performed in February 2026 after audit 1 fixes were applied. It identified 3 additional findings:
+
+| Severity | Findings | Status |
+|----------|----------|--------|
+| High | 1 | Fixed (nested `__execute__` bypass blocked) |
+| Medium | 1 | Accepted (session hash scope — see [accepted risk](#session-hash-scope)) |
+| Low | 1 | Fixed (call consumed after validation, not before) |
+
+Full report: [audit/audit_agent_report_2_acedcc33-1159-4f2d-939a-cb04b84ff85c.pdf](audit/audit_agent_report_2_acedcc33-1159-4f2d-939a-cb04b84ff85c.pdf)
+Detailed responses: [AUDIT_RESPONSE_2.md](AUDIT_RESPONSE_2.md)
+
 ---
 
 ## 📖 Table of Contents
@@ -68,6 +82,7 @@ Detailed responses: [AUDIT_RESPONSE.md](AUDIT_RESPONSE.md)
 - [Real-World Use Cases](#-real-world-use-cases)
 - [Quick Start](#-quick-start)
 - [API Reference](#-api-reference)
+- [Standards Work](#-standards-work)
 
 ---
 
@@ -216,7 +231,7 @@ await paymaster.executeFromOutside(accountAddress, outsideExecution, signature);
 1. Check session exists (valid_until > 0)
 2. Check not expired (block_timestamp ≤ valid_until)
 3. Check calls remaining (calls_used < max_calls)
-4. Block admin selectors (upgrade, add/revoke session)
+4. Block admin selectors (upgrade, add/revoke session, `__execute__`)
 5. Check selector allowed (if whitelist exists)
 6. Verify ECDSA signature
 7. Increment calls_used counter
@@ -233,6 +248,7 @@ Transaction authorized
 | **No Account Confusion** | Account address included in message hash |
 | **No Privilege Escalation** | Sessions can only call whitelisted functions |
 | **No Admin Access** | Sessions blocked from upgrade/add/revoke selectors regardless of whitelist |
+| **No Nested Execution** | Sessions blocked from calling `__execute__` directly (prevents privilege escalation) |
 | **No Indefinite Access** | Sessions have mandatory expiration |
 | **No Runaway Usage** | Call limits prevent abuse of compromised keys |
 
@@ -240,9 +256,15 @@ Transaction authorized
 
 The `__execute__` function uses best-effort execution: if a subcall fails, it returns an empty span for that call and continues. This is intentional — callers should check the results array for empty spans to detect partial failures. This differs from the atomic all-or-nothing pattern used by some account implementations.
 
-### Production Hardening (v29)
+### Session Hash Scope
 
-- All Nethermind audit fixes applied (findings #1-#4, #8-#10)
+Session signatures bind `calls`, `calldata`, `nonce`, `chain_id`, and `expiration` but **not** fee parameters (resource bounds, tip, paymaster data). In the paymaster flow this is irrelevant — the user does not pay gas, so fee manipulation by a relayer has no economic impact on the signer. This is an accepted tradeoff for paymaster compatibility. See [AUDIT_RESPONSE_2.md — Finding #2](AUDIT_RESPONSE_2.md) for the full analysis.
+
+### Production Hardening (v31)
+
+- All Nethermind audit fixes applied — Audit 1 (findings #1-#4, #8-#10) and Audit 2 (#1, #3)
+- Dead code removed (`_validate_session_for_calls` — superseded, lacked admin blocklist)
+- Duplicate `is_valid_signature` consolidated (external delegates to SRC6Impl)
 - Debug events and debug contract removed
 - Essential events only: `SessionKeyAdded`, `SessionKeyRevoked`, `OutsideExecutionExecuted`
 
@@ -250,13 +272,13 @@ The `__execute__` function uses best-effort execution: if a subcall fails, it re
 
 ## 🧪 Comprehensive Test Suite
 
-### Test Results: 36/36 Passing
+### Test Results: 38/38 Passing
 
 ```bash
 $ snforge test
 
-Collected 36 test(s) from sessions_smart_contract package
-Running 36 test(s) from tests/
+Collected 38 test(s) from sessions_smart_contract package
+Running 38 test(s) from tests/
 
 # Session Validation Tests (15)
 [PASS] test_owner_signature_valid
@@ -283,7 +305,7 @@ Running 36 test(s) from tests/
 [PASS] test_signature_length_5_returns_zero
 [PASS] test_session_valid_at_exact_expiration_boundary
 
-# Audit Fix Regression Tests (12)
+# Audit Fix Regression Tests (14)
 [PASS] test_audit1_execute_rejects_unauthorized_caller
 [PASS] test_audit1_execute_allows_self_caller
 [PASS] test_audit2_validate_blocks_disallowed_selector
@@ -296,22 +318,23 @@ Running 36 test(s) from tests/
 [PASS] test_audit9_overflow_valid_until_returns_zero
 [PASS] test_audit9_is_valid_signature_overflow_returns_zero
 [PASS] test_audit10_update_session_clears_old_entrypoints
+[PASS] test_audit_new_session_blocked_from_execute
+[PASS] test_audit_new_execute_from_outside_invalid_signature_reverts
 
 # SNIP-9 Compatibility Tests (3)
 [PASS] test_snip9_version_returns_v2
 [PASS] test_contract_info_shows_snip9_compatible
 [PASS] test_session_keys_still_work_with_snip9
 
-Tests: 36 passed, 0 failed, 0 ignored, 0 filtered out
+Tests: 38 passed, 0 failed, 0 ignored, 0 filtered out
 ```
 
 ### Test Categories
 
 | Category | Tests | What It Covers |
 |----------|-------|----------------|
-| **Session Validation** | 15 | Add, revoke, expiry, limits, selectors, signatures, events |
-| **Session Edge Cases** | 6 | Zero max_calls, double revoke, update reset, concurrent sessions, invalid sig lengths, expiration boundary |
-| **Audit Fix Regressions** | 12 | One+ test per Nethermind finding: `__execute__` caller check, admin blocklist, whitelist enforcement, `is_valid_signature` read-only, non-atomic multicall, safe `try_into()`, stale entrypoint cleanup |
+| **Session Validation** | 21 | Add, revoke, expiry, limits, selectors, signatures, events, edge cases |
+| **Audit Fix Regressions** | 14 | One+ test per Nethermind finding from both audits: `__execute__` caller check, admin blocklist, `__execute__` nested bypass, whitelist enforcement, `is_valid_signature` read-only, non-atomic multicall, safe `try_into()`, stale entrypoint cleanup, SNIP-9 call ordering |
 | **SNIP-9 Compatibility** | 3 | Version checks, interface detection, session+SNIP-9 integration |
 
 ---
@@ -484,7 +507,7 @@ sncast declare --contract-name Account --network mainnet
 
 # Deploy with your public key
 sncast deploy \
-  --class-hash 0x53f4f8791ed5bed0fddaa553d180c664e32cfaf8316bb232ae77bb08f459f2a \
+  --class-hash 0x254f6dd0427319ec614c29e4e3929500d1ba95d0da87ff81d67051ce572667 \
   --constructor-calldata YOUR_PUBLIC_KEY \
   --network mainnet
 ```
@@ -538,6 +561,19 @@ fn get_outside_execution_message_hash_rev_1(
 
 ---
 
+## 📐 Standards Work
+
+We are drafting a SNIP (Starknet Improvement Proposal) for session key interoperability. Every team building on Starknet — Argent, Braavos, Cartridge, and others — faces the same challenge: session key implementations are mutually incompatible, and paymasters must be forked to support each one.
+
+This is not about imposing our approach. It is about starting a conversation. On-chain validation, off-chain guardians, and library-based proofs are all valid designs serving different priorities. A good standard should accommodate all of them.
+
+- **Research & ecosystem analysis**: [SNIP_RESEARCH.md](SNIP_RESEARCH.md)
+- **Draft proposal**: [SNIP_DRAFT.md](SNIP_DRAFT.md)
+
+We welcome feedback from wallet teams, paymaster operators, and dApp developers. If you have opinions on session key interoperability, please open an issue or reach out.
+
+---
+
 ## 📄 License
 
 MIT License — see [LICENSE](LICENSE) for details.
@@ -551,7 +587,7 @@ Contributions welcome! Please:
 1. Fork the repository
 2. Create a feature branch
 3. Write tests for new functionality
-4. Ensure all 36 tests pass
+4. Ensure all 38 tests pass
 5. Submit a pull request
 
 ---
