@@ -16,7 +16,7 @@ Chipi Pay has built and deployed a **full-stack production system** for gasless,
 - **Modified Paymaster Backend** (Rust) — Forked from AVNU's paymaster, adapted for OpenZeppelin-based session accounts
 - **Forwarder Contract** (Cairo) — Whitelisted relayer that routes sponsored transactions
 
-The system is live on Starknet mainnet with class hash `0x53f4f8791ed5bed0fddaa553d180c664e32cfaf8316bb232ae77bb08f459f2a`, audited twice by Nethermind (January and February 2026), and backed by 38 passing tests.
+The system is live on Starknet mainnet with class hash `0x35a2251aca25daba18a5d8950deffa8372a7d84774554e75283cb85552eebc9` (v32), audited three times by Nethermind (January and February 2026), and backed by 46 passing tests.
 
 ### The Full Stack
 
@@ -366,9 +366,10 @@ AVNU operates the primary paymaster infrastructure on Starknet and authored SNIP
 
 **Role**: Security auditing
 
-Nethermind audited both our session account contract and AVNU's paymaster. Their AuditAgent performed two scans of our contract:
+Nethermind audited both our session account contract and AVNU's paymaster. Their AuditAgent performed three scans of our contract:
 - **January 2026**: 10 findings (3 High fixed, 1 High disputed, 1 High accepted, 2 Medium resolved, 1 Low fixed, 2 Best Practice fixed)
-- **February 2026**: 3 findings (1 High fixed, 1 Medium accepted, 1 Low fixed)
+- **February 2026 (scan 2)**: 3 findings (1 High fixed, 1 Medium accepted, 1 Low fixed)
+- **February 2026 (scan 3)**: 5 findings (2 High fixed — 1 unique + 1 duplicate, 2 Low fixed, 1 Info fixed)
 
 ### Bibliotheca DAO
 
@@ -512,11 +513,22 @@ Forked AVNU's paymaster (`openzep` branch) to work with our account and achieve 
 - **1 Medium accepted**: Session hash doesn't bind full tx envelope (#2) — accepted for paymaster compatibility, documented
 - **1 Low fixed**: Call consumed before validation in SNIP-9 path (#3) — reordered to consume after validation
 
+### Phase 6: Third Nethermind Audit (February 2026)
+
+5 additional findings (2 High — same finding filed as duplicate, 2 Low, 1 Info):
+- **1 High fixed**: `set_public_key`/`setPublicKey` not in blocklist (#1) — OZ owner rotation selectors added to blocklist
+- **1 High duplicate**: Same as #1 (filed against test file)
+- **1 Low fixed**: Nested `execute_from_outside_v2` double-consumption (#3) — selector added to blocklist
+- **1 Low fixed**: Missing SRC-5 interface registration (#4) — `ISessionKeyManager` ID registered in constructor
+- **1 Info fixed**: Malleable `valid_until` in SNIP-9 path (#5) — signature value bound to stored session
+
+**Systemic fix**: Added self-call block — sessions with empty whitelist cannot target the account contract at all. This eliminates the entire class of privilege escalation via self-calls that audits 1→2→3 kept discovering (each audit found new OZ selectors not in the denylist).
+
 ### Current State
 
-- **Production on mainnet**: Class hash `0x53f4f8791ed5bed0fddaa553d180c664e32cfaf8316bb232ae77bb08f459f2a`
-- **38 tests passing**: 21 session validation + 14 audit regression + 3 SNIP-9 compatibility
-- **Two Nethermind audits**: All critical findings fixed, accepted tradeoffs documented
+- **Production on mainnet**: Class hash `0x35a2251aca25daba18a5d8950deffa8372a7d84774554e75283cb85552eebc9` (v32)
+- **46 tests passing**: 21 session validation + 22 audit regression + 3 SNIP-9 compatibility
+- **Three Nethermind audits**: All critical findings fixed, accepted tradeoffs documented
 - **Dependencies**: OpenZeppelin Cairo Contracts v2.0.0, AVNU Contracts Lib v0.1.0, Starknet >= 2.8.0
 
 ---
@@ -578,18 +590,24 @@ pub trait ISessionKeyManager<TContractState> {
 
 The following selectors are blocked for ALL session keys, regardless of whitelist configuration:
 
-| Selector | Function | Reason |
-|----------|----------|--------|
-| `selector!("upgrade")` | Contract upgrade | Prevents session key from replacing contract code |
-| `selector!("add_or_update_session_key")` | Session creation | Prevents session key from creating new sessions |
-| `selector!("revoke_session_key")` | Session revocation | Prevents session key from revoking other sessions |
-| `selector!("__execute__")` | Nested execution | Prevents privilege escalation via nested call routing |
+| Selector | Function | Reason | Added |
+|----------|----------|--------|-------|
+| `selector!("upgrade")` | Contract upgrade | Prevents session key from replacing contract code | Audit 1 |
+| `selector!("add_or_update_session_key")` | Session creation | Prevents session key from creating new sessions | Audit 1 |
+| `selector!("revoke_session_key")` | Session revocation | Prevents session key from revoking other sessions | Audit 1 |
+| `selector!("__execute__")` | Nested execution | Prevents privilege escalation via nested call routing | Audit 2 |
+| `selector!("set_public_key")` | Owner key rotation | Prevents account takeover via OZ PublicKeyImpl | Audit 3 |
+| `selector!("setPublicKey")` | Owner key rotation (camel) | Prevents account takeover via OZ PublicKeyCamelImpl | Audit 3 |
+| `selector!("execute_from_outside_v2")` | Nested SNIP-9 | Prevents double nonce/call consumption | Audit 3 |
+
+**Self-call block (v32)**: In addition to the blocklist, sessions with `allowed_entrypoints_len == 0` (empty whitelist) cannot target the account contract at all (`call.to != get_contract_address()`). This eliminates the entire class of privilege escalation via self-calls.
 
 ## Appendix C: Test Coverage Summary
 
 | Category | Count | Coverage |
 |----------|-------|----------|
 | Session Validation | 21 | Add, revoke, expiry, limits, selectors, signatures, events, edge cases |
-| Audit Fix Regressions | 14 | One or more tests per Nethermind finding from both audits |
+| Audit 1+2 Fix Regressions | 14 | One or more tests per Nethermind finding from audits 1 and 2 |
+| Audit 3 Fix Regressions | 8 | Blocklist expansion, self-call block, SRC-5 registration, external call allowance |
 | SNIP-9 Compatibility | 3 | Version checks, interface detection, session + SNIP-9 integration |
-| **Total** | **38** | |
+| **Total** | **46** | |

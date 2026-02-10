@@ -82,6 +82,7 @@ mod Account {
     #[abi(embed_v0)]
     impl SRC5Impl = SRC5Component::SRC5Impl<ContractState>;
     impl AccountInternalImpl = AccountComponent::InternalImpl<ContractState>;
+    impl SRC5InternalImpl = SRC5Component::InternalImpl<ContractState>;
     // DO NOT embed AccountComponent::SRC6Impl - we implement our own __validate__
 // DO NOT embed SRC9Component::SRC6Impl - we implement our own __validate__
 
@@ -149,10 +150,19 @@ mod Account {
         session_key: felt252,
     }
 
+    /// SRC-5 interface ID for ISessionKeyManager.
+    /// Computed as: starknetKeccak("add_or_update_session_key")
+    ///            ^ starknetKeccak("revoke_session_key")
+    ///            ^ starknetKeccak("get_session_data")
+    const SESSION_KEY_MANAGER_ID: felt252 =
+        0x037ab4f01106526662a612eaa2926df2aa314c4144b964f183805880bbcfa55d;
+
     #[constructor]
     fn constructor(ref self: ContractState, public_key: felt252) {
-            self.account.initializer(public_key);
-        self.src9.initializer();
+            self.account.initializer(public_key);   // registers ISRC6
+        self.src9.initializer();                 // registers ISRC9_V2
+        // Register custom session key manager interface (SRC-5)
+        self.src5.register_interface(SESSION_KEY_MANAGER_ID);
     }
 
 
@@ -160,6 +170,16 @@ mod Account {
     #[abi(per_item)]
     #[generate_trait]
     impl SRC6Impl of SRC6Trait {
+        /// Validates a transaction before execution.
+        ///
+        /// Dual-path validation:
+        /// - Empty signature (len=0): Accepts only self-calls (routed via __execute__)
+        /// - Session signature (len=4): [session_pubkey, r, s, valid_until] — validates
+        ///   session existence, expiry, call limit, admin blocklist, self-call block,
+        ///   whitelist, then ECDSA signature. Consumes a call only after validation.
+        /// - Owner signature (len=2): [r, s] — delegates to OZ AccountComponent
+        ///
+        /// Returns VALIDATED on success, 0 on failure. Never panics for invalid input.
         #[external(v0)]
         fn __validate__(ref self: ContractState, calls: Array<Call>) -> felt252 {
             let tx_info = get_tx_info().unbox();
@@ -218,6 +238,11 @@ mod Account {
             0
         }
 
+        /// Executes validated calls. Only callable by the sequencer (caller=0) or self.
+        ///
+        /// SECURITY: Caller restriction prevents external contracts from invoking
+        /// __execute__ directly. Non-atomic: failed subcalls return empty spans
+        /// without reverting the batch (by design — see audit 1 finding #7).
         #[external(v0)]
         fn __execute__(ref self: ContractState, calls: Array<Call>) -> Array<Span<felt252>> {
             // Defense in depth: verify caller is either 0 (sequencer) or self
@@ -247,6 +272,12 @@ mod Account {
             self.account.validate_transaction()
         }
 
+        /// Read-only signature validation (ERC-1271 / SRC-6).
+        ///
+        /// Validates both owner (2-element) and session (4-element) signatures.
+        /// DOES NOT consume session calls or execute any calls — purely read-only.
+        /// Cannot enforce selector whitelists (no call context available).
+        /// Audit 1 finding #5: accepted tradeoff for paymaster compatibility.
         fn is_valid_signature(
             self: @ContractState, hash: felt252, signature: Array<felt252>
         ) -> felt252 {
@@ -321,11 +352,17 @@ mod Account {
     // This replaces the embedded SRC9Component::OutsideExecutionV2Impl to add security checks
     #[abi(embed_v0)]
     impl CustomSRC9V2Impl of ISRC9_V2<ContractState> {
-        /// Allows anyone to submit a transaction on behalf of the account as long as they
-        /// provide the relevant signatures.
+        /// Executes calls on behalf of the account via SNIP-9 outside execution.
         ///
-        /// SECURITY: For session signatures, this enforces the whitelist BEFORE signature validation.
-        /// This prevents session keys from executing unauthorized selectors via SNIP-9/Paymaster flow.
+        /// Flow: validate caller → validate time bounds → consume nonce →
+        ///       (session path) bind valid_until, enforce whitelist →
+        ///       validate signature (dual hash: OZ u128 first, felt fallback) →
+        ///       consume session call → execute calls.
+        ///
+        /// SECURITY: For session signatures, whitelist is enforced BEFORE signature
+        /// validation and call consumption happens AFTER. valid_until in the signature
+        /// is bound to the stored session value to prevent relayer malleability
+        /// (audit 3 fix #5).
         fn execute_from_outside_v2(
             ref self: ContractState,
             outside_execution: OutsideExecution,
@@ -357,6 +394,19 @@ mod Account {
             if signature.len() == 4 {
                 is_session_sig = true;
                 session_pubkey = *signature.at(0);
+
+                // SECURITY (audit 3 fix #5): Bind valid_until to stored session value.
+                // Prevents relayer from extending valid_until beyond the session's limit.
+                let sig_valid_until: u64 = match (*signature.at(3)).try_into() {
+                    Option::Some(v) => v,
+                    Option::None => {
+                        core::panic_with_felt252('Session: invalid timestamp');
+                        0
+                    }
+                };
+                let session = self.session_keys.read(session_pubkey);
+                assert(sig_valid_until <= session.valid_until, 'Session: valid_until exceeded');
+
                 assert(
                     self._is_session_allowed_for_calls(session_pubkey, outside_execution.calls),
                     'Session: unauthorized selector'
@@ -414,8 +464,12 @@ mod Account {
         }
     }
 
-    // Session key management with external entry points - v26 (audit fixes)
+    /// Session key management — owner-only access control.
+    /// All functions require caller == self (enforced by assert_only_self).
     impl SessionKeyManagerImpl of super::ISessionKeyManager<ContractState> {
+        /// Adds a new session key or updates an existing one.
+        /// Clears stale entrypoints before writing new ones (audit 1 fix #10).
+        /// Resets calls_used to 0 on update.
         fn add_or_update_session_key(
             ref self: ContractState,
             session_key: felt252,
@@ -458,9 +512,10 @@ mod Account {
             self.emit(SessionKeyAdded { session_key, valid_until, max_calls });
         }
 
+        /// Revokes a session key. Clears all stored entrypoints and zeroes SessionData.
         fn revoke_session_key(ref self: ContractState, session_key: felt252) {
             self.account.assert_only_self();
-            
+
             // Get the current session data to know how many entrypoints to clear
             let current_session = self.session_keys.read(session_key);
             let entrypoints_to_clear = current_session.allowed_entrypoints_len;
@@ -515,10 +570,19 @@ mod Account {
         SessionKeyManagerImpl::get_session_data(self, session_key)
     }
 
+    /// One-time post-upgrade initializer: registers SRC-5 interface IDs that
+    /// the constructor would set on a fresh deploy. Owner-only (assert_only_self).
+    /// Idempotent — safe to call multiple times.
+    #[external(v0)]
+    fn register_interfaces(ref self: ContractState) {
+        self.account.assert_only_self();
+        self.src5.register_interface(SESSION_KEY_MANAGER_ID);
+    }
+
     // Production-safe functions (no security vulnerabilities)
     #[external(v0)]
     fn get_contract_info(self: @ContractState) -> felt252 {
-        'v31'
+        'v32'
     }
 
     // SNIP-9 version check - returns 2 for SNIP-9 v2 compatibility
@@ -575,8 +639,25 @@ mod Account {
             self.session_entrypoints.read((session_key, index))
         }
 
-        // NEW: Pure session validation check (no mutations)
-        // SECURITY: Includes admin selector blocklist (audit fix #3, #8)
+        /// Pure session validation check (no mutations).
+        ///
+        /// SECURITY: Enforces two layers of protection against privilege escalation:
+        ///
+        /// Layer 1 — Admin selector blocklist (defense-in-depth):
+        ///   Blocks 7 specific selectors that grant privileged access regardless of
+        ///   whitelist configuration. This is a denylist and is inherently fragile
+        ///   (each OZ upgrade or new embedded impl may expose new selectors).
+        ///   Audit history: audit 1 added upgrade/add/revoke, audit 2 added __execute__,
+        ///   audit 3 added set_public_key/setPublicKey/execute_from_outside_v2.
+        ///
+        /// Layer 2 — Self-call block for empty whitelist (primary protection):
+        ///   When allowed_entrypoints_len == 0 (open whitelist), sessions CANNOT target
+        ///   the account contract itself. This eliminates the entire class of self-call
+        ///   privilege escalation, protecting against any future OZ selector additions
+        ///   without needing to update the blocklist.
+        ///
+        /// Together: the blocklist catches known selectors even for explicit whitelists,
+        /// and the self-call block catches ALL self-targeting calls for open whitelists.
         fn _is_session_allowed_for_calls(
             self: @ContractState,
             session_key: felt252,
@@ -587,14 +668,17 @@ mod Account {
             if get_block_timestamp() > session.valid_until { return false; }
             if session.calls_used >= session.max_calls { return false; }
 
-            // SECURITY: Admin selector blocklist - sessions can NEVER call these
-            // This prevents session keys from upgrading the account or managing sessions
-            // even with an empty whitelist (which means "allow all user functions")
+            // SECURITY Layer 1: Admin selector blocklist — sessions can NEVER call these.
+            // This prevents session keys from upgrading the account, managing sessions,
+            // rotating the owner key, or re-entering privileged execution paths.
             let UPGRADE_SELECTOR: felt252 = selector!("upgrade");
             let ADD_SESSION_SELECTOR: felt252 = selector!("add_or_update_session_key");
             let REVOKE_SESSION_SELECTOR: felt252 = selector!("revoke_session_key");
-            // Block __execute__ to prevent nested execution privilege escalation
             let EXECUTE_SELECTOR: felt252 = selector!("__execute__");
+            // Audit 3 additions:
+            let SET_PUBLIC_KEY_SELECTOR: felt252 = selector!("set_public_key");
+            let SET_PUBLIC_KEY_CAMEL_SELECTOR: felt252 = selector!("setPublicKey");
+            let EXECUTE_FROM_OUTSIDE_V2_SELECTOR: felt252 = selector!("execute_from_outside_v2");
 
             // First pass: check for blocked admin selectors
             let mut i = 0;
@@ -603,20 +687,39 @@ mod Account {
                 let call = calls.at(i);
                 let sel = *call.selector;
 
-                // Block admin functions regardless of whitelist
+                // Block admin/privileged functions regardless of whitelist
                 if sel == UPGRADE_SELECTOR
                     || sel == ADD_SESSION_SELECTOR
                     || sel == REVOKE_SESSION_SELECTOR
-                    || sel == EXECUTE_SELECTOR {
+                    || sel == EXECUTE_SELECTOR
+                    || sel == SET_PUBLIC_KEY_SELECTOR
+                    || sel == SET_PUBLIC_KEY_CAMEL_SELECTOR
+                    || sel == EXECUTE_FROM_OUTSIDE_V2_SELECTOR {
                     return false;
                 }
                 i += 1;
             };
 
-            // If no whitelist (allowed_entrypoints_len == 0), allow all non-admin selectors
-            if session.allowed_entrypoints_len == 0 { return true; }
+            // SECURITY Layer 2: Self-call block for empty whitelist.
+            // When allowed_entrypoints_len == 0 (open whitelist), block ALL calls
+            // targeting the account contract itself. This eliminates the entire class
+            // of privilege escalation via self-calls, protecting against any future
+            // OZ embedded impl selectors without needing blocklist updates.
+            if session.allowed_entrypoints_len == 0 {
+                let account_address = get_contract_address();
+                let mut i = 0;
+                loop {
+                    if i >= calls.len() { break; }
+                    let call = calls.at(i);
+                    if *call.to == account_address {
+                        return false;
+                    }
+                    i += 1;
+                };
+                return true;
+            }
 
-            // Second pass: verify all selectors are in the whitelist
+            // Second pass: verify all selectors are in the explicit whitelist
             let mut i = 0;
             loop {
                 if i >= calls.len() { break; }
@@ -644,7 +747,12 @@ mod Account {
             self.session_keys.write(session_key, session);
         }
 
-        /// Compute message hash for session signature
+        /// Compute Poseidon message hash for session signature verification.
+        ///
+        /// Binds: account address, chain_id, nonce, valid_until, and all call data.
+        /// Does NOT bind fee parameters (resource bounds, tip, paymaster data) —
+        /// this is an accepted tradeoff for paymaster compatibility where the user
+        /// does not pay gas (audit 2 finding #2).
         fn _session_message_hash(
             self: @ContractState,
             calls: Span<Call>,

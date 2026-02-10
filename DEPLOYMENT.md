@@ -4,58 +4,54 @@ This document tracks all contract class declarations on Starknet mainnet.
 
 ---
 
-## Latest: v31 — Audit 2 Fixes (Pending Declaration)
+## Latest: v32 — Audit 3 Fixes
 
-- **Class Hash**: `0x254f6dd0427319ec614c29e4e3929500d1ba95d0da87ff81d67051ce572667`
+- **Class Hash**: `0x35a2251aca25daba18a5d8950deffa8372a7d84774554e75283cb85552eebc9`
 - **Contract Address**: `0x03062f8ec52749beae94daee793871e60a4f71fdee577e9d9fb0c61260024806`
-- **Status**: Declared (pending upgrade)
-- **Starkscan**: [View Contract Class](https://starkscan.co/class/0x00254f6dd0427319ec614c29e4e3929500d1ba95d0da87ff81d67051ce572667)
-- **Voyager**: [View Contract Class](https://voyager.online/class/0x00254f6dd0427319ec614c29e4e3929500d1ba95d0da87ff81d67051ce572667)
+- **Status**: Live (declared + upgraded)
+- **Starkscan**: [View Contract Class](https://starkscan.co/class/0x035a2251aca25daba18a5d8950deffa8372a7d84774554e75283cb85552eebc9)
+- **Voyager**: [View Contract Class](https://voyager.online/class/0x035a2251aca25daba18a5d8950deffa8372a7d84774554e75283cb85552eebc9)
 - **Audits**:
-  - Audit 1: Nethermind AuditAgent, January 2026 — [Full Report](audit/nethermind-audit-2026-01.pdf)
-  - Audit 2: Nethermind AuditAgent, February 2026 — [Full Report](audit/audit_agent_report_2_acedcc33-1159-4f2d-939a-cb04b84ff85c.pdf)
+  - Audit 1: Nethermind AuditAgent, January 2026
+  - Audit 2: Nethermind AuditAgent, February 2026
+  - Audit 3: Nethermind AuditAgent, February 2026 — [Full Report](audit/audit_agent_report_3_4bedc58d-5c45-4607-b61a-d3f040f8a783.pdf)
 
-### What changed from v30
+### What changed from v31
 
-- **Audit 2 fix: `__execute__` blocklist** — Session keys can no longer call `__execute__` to achieve nested execution privilege escalation
-- **Audit 2 fix: call-consume ordering** — `_consume_session_call` now runs after signature validation in `execute_from_outside_v2`, preventing single-use session keys from being consumed on failed signatures
-- **Dead code removal** — Deleted `_validate_session_for_calls` (superseded by `_is_session_allowed_for_calls` + `_consume_session_call`, lacked admin blocklist)
-- **`is_valid_signature` consolidation** — External ERC-1271 entry point now delegates to `SRC6Impl::is_valid_signature`, eliminating duplicate logic
-- **Version string** — `get_contract_info` returns `'v31'`
-- **Comment cleanup** — Updated stale references to felt-timestamp primary path (now a fallback)
+- **Audit 3 fix: `set_public_key`/`setPublicKey` blocklist** — OZ PublicKeyImpl owner rotation functions added to admin blocklist
+- **Audit 3 fix: `execute_from_outside_v2` blocklist** — Nested SNIP-9 re-entry blocked for session keys
+- **Audit 3 fix: Self-call block** — Sessions with empty whitelist cannot target the account contract at all, eliminating the entire class of self-call privilege escalation
+- **Audit 3 fix: SRC-5 `ISessionKeyManager` registration** — Interface ID registered in constructor for paymaster/dApp discovery
+- **Audit 3 fix: `valid_until` binding** — SNIP-9 path binds signature `valid_until` to stored session value
+- **NatSpec documentation** — Comprehensive doc comments on all public and security-critical functions
+- **Version string** — `get_contract_info` returns `'v32'`
+- **Admin blocklist** — Expanded from 4 to 7 selectors + self-call block
 
-### Audit 1 fixes applied (January 2026)
-
-| # | Finding | Severity | Status |
-|---|---------|----------|--------|
-| 1 | Unrestricted `__execute__` | High | Defense-in-depth caller check added |
-| 2 | Session whitelist bypassed in `is_valid_signature` | High | Fixed |
-| 3 | Call-limit bypass via `calls_used` reset | High | Fixed (admin blocklist) |
-| 4 | Session whitelist bypassed in `execute_from_outside_v2` | High | Fixed |
-| 5 | Session keys as ERC-1271 signers | High | Accepted tradeoff (documented) |
-| 6 | State modification in `is_valid_signature` | Medium | Invalid (uses `@ContractState`) |
-| 7 | Non-atomic multicall | Medium | By design (documented) |
-| 8 | Session can revoke sessions | Low | Fixed (admin blocklist) |
-| 9 | DoS via unsafe `unwrap()` | Best Practice | Fixed (safe match pattern) |
-| 10 | Stale entrypoints on revoke | Best Practice | Fixed (clear before write) |
-
-See [AUDIT_RESPONSE.md](AUDIT_RESPONSE.md) for detailed responses.
-
-### Audit 2 fixes applied (February 2026)
+### Audit 3 fixes applied (February 2026)
 
 | # | Finding | Severity | Status |
 |---|---------|----------|--------|
-| 1 | Session keys bypass blocklist via nested `__execute__` | High | Fixed (`__execute__` added to admin blocklist) |
-| 2 | Session signature does not bind full tx envelope | Medium | Accepted risk (paymaster compatibility) |
-| 3 | `execute_from_outside_v2` consumes call before validation | Low | Fixed (consume after validation) |
+| 1 | `set_public_key`/`setPublicKey` not in admin blocklist | High | Fixed (blocklist + self-call block) |
+| 2 | Duplicate of #1 (filed against test file) | High | Duplicate (same fix) |
+| 3 | Nested `execute_from_outside_v2` double-consumption | Low | Fixed (blocklist + self-call block) |
+| 4 | Missing SRC-5 interface registration | Low | Fixed (register in constructor) |
+| 5 | Malleable `valid_until` in SNIP-9 session path | Info | Fixed (bind to stored session) |
 
-See [AUDIT_RESPONSE_2.md](AUDIT_RESPONSE_2.md) for detailed responses.
+See [AUDIT_RESPONSE_3.md](AUDIT_RESPONSE_3.md) for detailed responses.
+
+---
+
+### v31 — Audit 2 Fixes (February 2026)
+- **Class Hash**: `0x254f6dd0427319ec614c29e4e3929500d1ba95d0da87ff81d67051ce572667`
+- **Status**: Superseded by v32 (does not include audit 3 fixes)
+- **Notes**: Audit 1+2 fixes applied. Does NOT include: self-call block, set_public_key blocklist, SRC-5 registration, valid_until binding.
+- **Voyager**: [View](https://voyager.online/class/0x00254f6dd0427319ec614c29e4e3929500d1ba95d0da87ff81d67051ce572667)
 
 ---
 
 ## Upgrading Existing Contracts
 
-To upgrade existing contracts to v31:
+To upgrade existing contracts to v32:
 
 ```bash
 sncast --account deployer_oz \
@@ -63,7 +59,7 @@ sncast --account deployer_oz \
   invoke \
   --contract-address <YOUR_DEPLOYED_CONTRACT_ADDRESS> \
   --function upgrade \
-  --calldata 0x254f6dd0427319ec614c29e4e3929500d1ba95d0da87ff81d67051ce572667 \
+  --calldata 0x35a2251aca25daba18a5d8950deffa8372a7d84774554e75283cb85552eebc9 \
   --network mainnet
 ```
 

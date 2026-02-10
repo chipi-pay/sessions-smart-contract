@@ -32,12 +32,13 @@ A production-ready Cairo smart contract that combines **session keys** with **SN
 
 | Field | Value |
 |-------|-------|
-| **Class Hash** | `0x254f6dd0427319ec614c29e4e3929500d1ba95d0da87ff81d67051ce572667` |
+| **Class Hash** | `0x35a2251aca25daba18a5d8950deffa8372a7d84774554e75283cb85552eebc9` |
 | **Contract Address** | `0x03062f8ec52749beae94daee793871e60a4f71fdee577e9d9fb0c61260024806` |
 | **Network** | Starknet Mainnet |
-| **Version** | v31 (Audit 1 + 2 Compliant) |
-| **Audit** | Nethermind AuditAgent — January & February 2026 |
-| **Voyager** | [View Contract Class](https://voyager.online/class/0x00254f6dd0427319ec614c29e4e3929500d1ba95d0da87ff81d67051ce572667) |
+| **Version** | v32 (Audit 1 + 2 + 3 Compliant) |
+| **Status** | Live on Mainnet |
+| **Audit** | Nethermind AuditAgent — January & February 2026 (3 scans) |
+| **Voyager** | [View Contract Class](https://voyager.online/class/0x035a2251aca25daba18a5d8950deffa8372a7d84774554e75283cb85552eebc9) |
 
 ---
 
@@ -69,6 +70,21 @@ A second Nethermind AuditAgent scan was performed in February 2026 after audit 1
 
 Full report: [audit/audit_agent_report_2_acedcc33-1159-4f2d-939a-cb04b84ff85c.pdf](audit/audit_agent_report_2_acedcc33-1159-4f2d-939a-cb04b84ff85c.pdf)
 Detailed responses: [AUDIT_RESPONSE_2.md](AUDIT_RESPONSE_2.md)
+
+### Audit 3 — February 2026
+
+A third Nethermind AuditAgent scan was performed on v31 (commit `6424aa0`). It identified 5 findings (2 High — same finding filed as duplicate, 2 Low, 1 Info). All fixed:
+
+| Severity | Findings | Status |
+|----------|----------|--------|
+| High | 2 | Fixed (1 unique + 1 duplicate: `set_public_key`/`setPublicKey` added to blocklist + self-call block) |
+| Low | 2 | Fixed (nested `execute_from_outside_v2` blocked, SRC-5 interface registered) |
+| Info | 1 | Fixed (`valid_until` binding in SNIP-9 path) |
+
+**Systemic fix**: v32 adds a **self-call block** — sessions with empty whitelist cannot target the account contract at all. This eliminates the entire class of privilege escalation via self-calls that audits 1-3 kept finding.
+
+Full report: [audit/audit_agent_report_3_4bedc58d-5c45-4607-b61a-d3f040f8a783.pdf](audit/audit_agent_report_3_4bedc58d-5c45-4607-b61a-d3f040f8a783.pdf)
+Detailed responses: [AUDIT_RESPONSE_3.md](AUDIT_RESPONSE_3.md)
 
 ---
 
@@ -231,8 +247,9 @@ await paymaster.executeFromOutside(accountAddress, outsideExecution, signature);
 1. Check session exists (valid_until > 0)
 2. Check not expired (block_timestamp ≤ valid_until)
 3. Check calls remaining (calls_used < max_calls)
-4. Block admin selectors (upgrade, add/revoke session, `__execute__`)
-5. Check selector allowed (if whitelist exists)
+4. Block admin selectors (upgrade, add/revoke session, `__execute__`, set_public_key, setPublicKey, execute_from_outside_v2)
+5. Block self-calls for empty whitelist (call.to == account)
+6. Check selector allowed (if explicit whitelist exists)
 6. Verify ECDSA signature
 7. Increment calls_used counter
     ↓
@@ -247,8 +264,9 @@ Transaction authorized
 | **No Cross-Chain Replay** | Chain ID included in message hash |
 | **No Account Confusion** | Account address included in message hash |
 | **No Privilege Escalation** | Sessions can only call whitelisted functions |
-| **No Admin Access** | Sessions blocked from upgrade/add/revoke selectors regardless of whitelist |
-| **No Nested Execution** | Sessions blocked from calling `__execute__` directly (prevents privilege escalation) |
+| **No Admin Access** | Sessions blocked from upgrade/add/revoke/set_public_key/setPublicKey selectors regardless of whitelist |
+| **No Nested Execution** | Sessions blocked from calling `__execute__` and `execute_from_outside_v2` directly |
+| **No Self-Call Escalation** | Sessions with empty whitelist cannot target the account contract at all (eliminates entire privilege escalation class) |
 | **No Indefinite Access** | Sessions have mandatory expiration |
 | **No Runaway Usage** | Call limits prevent abuse of compromised keys |
 
@@ -260,25 +278,29 @@ The `__execute__` function uses best-effort execution: if a subcall fails, it re
 
 Session signatures bind `calls`, `calldata`, `nonce`, `chain_id`, and `expiration` but **not** fee parameters (resource bounds, tip, paymaster data). In the paymaster flow this is irrelevant — the user does not pay gas, so fee manipulation by a relayer has no economic impact on the signer. This is an accepted tradeoff for paymaster compatibility. See [AUDIT_RESPONSE_2.md — Finding #2](AUDIT_RESPONSE_2.md) for the full analysis.
 
-### Production Hardening (v31)
+**v32 addition**: In the SNIP-9 path, the signature's `valid_until` is now bound to the stored session's `valid_until`, preventing a relayer from extending the expiration window (audit 3 finding #5).
 
-- All Nethermind audit fixes applied — Audit 1 (findings #1-#4, #8-#10) and Audit 2 (#1, #3)
-- Dead code removed (`_validate_session_for_calls` — superseded, lacked admin blocklist)
-- Duplicate `is_valid_signature` consolidated (external delegates to SRC6Impl)
-- Debug events and debug contract removed
-- Essential events only: `SessionKeyAdded`, `SessionKeyRevoked`, `OutsideExecutionExecuted`
+### Production Hardening (v32)
+
+- All Nethermind audit fixes applied — Audit 1 (#1-#4, #8-#10), Audit 2 (#1, #3), and Audit 3 (#1-#5)
+- **Self-call block** — Sessions with empty whitelist cannot target account contract (eliminates entire privilege escalation class)
+- **Expanded blocklist** — 7 admin selectors: upgrade, add/revoke session, __execute__, set_public_key, setPublicKey, execute_from_outside_v2
+- **SRC-5 registration** — `ISessionKeyManager` interface ID registered for paymaster/dApp discovery
+- **valid_until binding** — SNIP-9 path binds signature `valid_until` to stored session value
+- **NatSpec documentation** — Comprehensive doc comments on all public and security-critical functions
+- Dead code removed, debug events removed, essential events only
 
 ---
 
 ## 🧪 Comprehensive Test Suite
 
-### Test Results: 38/38 Passing
+### Test Results: 46/46 Passing
 
 ```bash
 $ snforge test
 
-Collected 38 test(s) from sessions_smart_contract package
-Running 38 test(s) from tests/
+Collected 46 test(s) from sessions_smart_contract package
+Running 46 test(s) from tests/
 
 # Session Validation Tests (15)
 [PASS] test_owner_signature_valid
@@ -305,7 +327,7 @@ Running 38 test(s) from tests/
 [PASS] test_signature_length_5_returns_zero
 [PASS] test_session_valid_at_exact_expiration_boundary
 
-# Audit Fix Regression Tests (14)
+# Audit 1+2 Fix Regression Tests (14)
 [PASS] test_audit1_execute_rejects_unauthorized_caller
 [PASS] test_audit1_execute_allows_self_caller
 [PASS] test_audit2_validate_blocks_disallowed_selector
@@ -321,12 +343,22 @@ Running 38 test(s) from tests/
 [PASS] test_audit_new_session_blocked_from_execute
 [PASS] test_audit_new_execute_from_outside_invalid_signature_reverts
 
+# Audit 3 Fix Regression Tests (8)
+[PASS] test_audit3_session_blocked_from_set_public_key
+[PASS] test_audit3_session_blocked_from_setPublicKey
+[PASS] test_audit3_session_blocked_from_execute_from_outside_v2
+[PASS] test_audit3_session_blocked_self_call_generic
+[PASS] test_audit3_session_allows_external_call_with_empty_whitelist
+[PASS] test_audit3_session_explicit_whitelist_allows_external
+[PASS] test_audit3_src5_supports_session_interface
+[PASS] test_audit3_src5_supports_unknown_returns_false
+
 # SNIP-9 Compatibility Tests (3)
 [PASS] test_snip9_version_returns_v2
 [PASS] test_contract_info_shows_snip9_compatible
 [PASS] test_session_keys_still_work_with_snip9
 
-Tests: 38 passed, 0 failed, 0 ignored, 0 filtered out
+Tests: 46 passed, 0 failed, 0 ignored, 0 filtered out
 ```
 
 ### Test Categories
@@ -334,7 +366,8 @@ Tests: 38 passed, 0 failed, 0 ignored, 0 filtered out
 | Category | Tests | What It Covers |
 |----------|-------|----------------|
 | **Session Validation** | 21 | Add, revoke, expiry, limits, selectors, signatures, events, edge cases |
-| **Audit Fix Regressions** | 14 | One+ test per Nethermind finding from both audits: `__execute__` caller check, admin blocklist, `__execute__` nested bypass, whitelist enforcement, `is_valid_signature` read-only, non-atomic multicall, safe `try_into()`, stale entrypoint cleanup, SNIP-9 call ordering |
+| **Audit 1+2 Fix Regressions** | 14 | `__execute__` caller check, admin blocklist, `__execute__` nested bypass, whitelist enforcement, `is_valid_signature` read-only, non-atomic multicall, safe `try_into()`, stale entrypoint cleanup, SNIP-9 call ordering |
+| **Audit 3 Fix Regressions** | 8 | `set_public_key`/`setPublicKey` blocklist, `execute_from_outside_v2` blocklist, self-call block, external call allowance, explicit whitelist, SRC-5 interface registration |
 | **SNIP-9 Compatibility** | 3 | Version checks, interface detection, session+SNIP-9 integration |
 
 ---
@@ -507,7 +540,7 @@ sncast declare --contract-name Account --network mainnet
 
 # Deploy with your public key
 sncast deploy \
-  --class-hash 0x254f6dd0427319ec614c29e4e3929500d1ba95d0da87ff81d67051ce572667 \
+  --class-hash 0x35a2251aca25daba18a5d8950deffa8372a7d84774554e75283cb85552eebc9 \
   --constructor-calldata YOUR_PUBLIC_KEY \
   --network mainnet
 ```
@@ -587,7 +620,7 @@ Contributions welcome! Please:
 1. Fork the repository
 2. Create a feature branch
 3. Write tests for new functionality
-4. Ensure all 38 tests pass
+4. Ensure all 46 tests pass
 5. Submit a pull request
 
 ---

@@ -144,7 +144,9 @@ Signature lengths other than 2 or 4 MUST be rejected by returning `0`.
 
 **Step 5**: Check admin blocklist. For EVERY call in the transaction, verify the selector is not in the admin blocklist (see Part D). If any call targets a blocked selector, return `0`.
 
-**Step 6**: Check selector whitelist. If `allowed_entrypoints_len > 0`, verify every call's selector appears in the session's allowed entrypoints list. If any selector is not found, return `0`. If `allowed_entrypoints_len == 0`, skip this check (empty whitelist means all non-admin selectors are allowed).
+**Step 5b** (RECOMMENDED): Check self-call block. If `allowed_entrypoints_len == 0`, verify that no call targets the account contract itself (`call.to != get_contract_address()`). If any call is a self-call, return `0`. This eliminates the entire class of privilege escalation via self-calls.
+
+**Step 6**: Check selector whitelist. If `allowed_entrypoints_len > 0`, verify every call's selector appears in the session's allowed entrypoints list. If any selector is not found, return `0`. If `allowed_entrypoints_len == 0`, all non-self, non-admin selectors are allowed (skip this check).
 
 **Step 7**: Verify ECDSA signature. Compute the message hash and verify the ECDSA signature `(r, s)` against `session_pubkey`. Return `0` on failure.
 
@@ -163,11 +165,20 @@ selector!("upgrade")                    // Prevents contract replacement
 selector!("add_or_update_session_key")  // Prevents session creation
 selector!("revoke_session_key")         // Prevents session revocation
 selector!("__execute__")                // Prevents nested execution privilege escalation
+selector!("set_public_key")             // Prevents owner key rotation (OZ PublicKeyImpl)
+selector!("setPublicKey")               // Prevents owner key rotation (OZ PublicKeyCamelImpl)
+selector!("execute_from_outside_v2")    // Prevents nested SNIP-9 double-consumption
 ```
 
 **Rationale for `__execute__`**: A session key that can call `__execute__` directly can pass arbitrary nested calls. Since `__execute__` checks that the caller is `0` (sequencer) or `self` (the account), and the account calling its own `__execute__` satisfies this check, the nested calls would execute with full account privileges — bypassing all session restrictions. This was identified as a High severity finding in Nethermind's February 2026 audit.
 
-Implementations MAY extend this blocklist with additional selectors but MUST NOT remove any of the four listed above.
+**Rationale for `set_public_key`/`setPublicKey`**: OpenZeppelin's `AccountComponent` embeds `PublicKeyImpl` and `PublicKeyCamelImpl`, exposing owner key rotation. A session key calling these functions achieves full account takeover. Identified as a High severity finding in Nethermind's February 2026 audit (scan 3).
+
+**Rationale for `execute_from_outside_v2`**: Allowing session keys to call `execute_from_outside_v2` creates nested SNIP-9 execution, potentially causing double nonce consumption or double call-counter increments. Identified as a Low severity finding in Nethermind's February 2026 audit (scan 3).
+
+Implementations MAY extend this blocklist with additional selectors but MUST NOT remove any of the seven listed above.
+
+**Self-call block (RECOMMENDED)**: In addition to the blocklist, implementations SHOULD block ALL calls where `call.to == get_contract_address()` when `allowed_entrypoints_len == 0` (empty whitelist). This eliminates the entire class of privilege escalation via self-calls, protecting against any future OZ embedded impl or upgrade exposing new privileged selectors. The denylist approach is inherently fragile — each of three Nethermind audits found selectors not in the blocklist. The self-call block converts this from an open-ended problem to a closed one.
 
 ### Part E: Stale Entrypoint Cleanup
 
@@ -337,9 +348,18 @@ Incrementing `calls_used` after signature verification (not before) prevents an 
 
 ## Security Considerations
 
+### Denylist Fragility and Self-Call Block
+
+The admin selector blocklist is defense-in-depth but inherently fragile. Across three Nethermind audits:
+- Audit 1: Found `upgrade`, `add_or_update_session_key`, `revoke_session_key` missing
+- Audit 2: Found `__execute__` missing
+- Audit 3: Found `set_public_key`, `setPublicKey`, `execute_from_outside_v2` missing
+
+Each audit discovered new selectors exposed by OZ embedded implementations. The self-call block (Step 5b) is the primary protection: it blocks ALL self-targeting calls for empty whitelists, eliminating the need to maintain a complete list of every privileged selector.
+
 ### Audit History
 
-The reference implementation has been audited twice by Nethermind:
+The reference implementation has been audited three times by Nethermind:
 
 **Audit 1 (January 2026)** — 10 findings:
 - Finding #1 (High): Unrestricted `__execute__` caller — defense-in-depth caller check added
@@ -357,6 +377,13 @@ The reference implementation has been audited twice by Nethermind:
 - Finding #1 (High): Nested `__execute__` privilege escalation — fixed by adding `__execute__` to admin blocklist
 - Finding #2 (Medium): Session hash does not bind full tx envelope — accepted risk for paymaster compatibility
 - Finding #3 (Low): Call consumed before validation in SNIP-9 path — fixed
+
+**Audit 3 (February 2026)** — 5 findings:
+- Finding #1 (High): `set_public_key`/`setPublicKey` not in blocklist — fixed (blocklist + self-call block)
+- Finding #2 (High): Duplicate of #1 — same fix
+- Finding #3 (Low): Nested `execute_from_outside_v2` double-consumption — fixed (blocklist + self-call block)
+- Finding #4 (Low): Missing SRC-5 interface registration — fixed
+- Finding #5 (Info): Malleable `valid_until` in SNIP-9 path — fixed (bind to stored session)
 
 ### Session Hash Does Not Bind Full Transaction Envelope
 
@@ -398,10 +425,10 @@ Future extensions to this SNIP MAY add optional calldata constraints (e.g., maxi
 
 - **Session account contract**: [github.com/chipi-pay/sessions-smart-contract](https://github.com/chipi-pay/sessions-smart-contract)
 - **Modified paymaster**: [github.com/chipi-pay](https://github.com/chipi-pay) `openzep` branch (forked from [github.com/avnu-labs/paymaster](https://github.com/avnu-labs/paymaster)) — U128 timestamps, ABI fallback, universal compatibility. Proposed upstream: [avnu-labs/paymaster#62](https://github.com/avnu-labs/paymaster/pull/62)
-- **Production class hash**: `0x254f6dd0427319ec614c29e4e3929500d1ba95d0da87ff81d67051ce572667`
+- **Production class hash**: `0x35a2251aca25daba18a5d8950deffa8372a7d84774554e75283cb85552eebc9` (v32)
 - **Network**: Starknet Mainnet
-- **Tests**: 38 passing (21 session validation + 14 audit regression + 3 SNIP-9 compatibility)
-- **Auditor**: Nethermind (January 2026, February 2026)
+- **Tests**: 46 passing (21 session validation + 22 audit regression + 3 SNIP-9 compatibility)
+- **Auditor**: Nethermind (January 2026, February 2026 — 3 scans)
 - **Dependencies**: OpenZeppelin Cairo Contracts v2.0.0, AVNU Contracts Lib v0.1.0, Starknet >= 2.8.0
 
 ### Reference Interface Definitions
@@ -449,7 +476,10 @@ function validate(calls, signature):
         for call in calls:
             if call.selector in ADMIN_BLOCKLIST: return 0
 
-        if session.allowed_entrypoints_len > 0:
+        if session.allowed_entrypoints_len == 0:
+            for call in calls:
+                if call.to == self_address: return 0  // self-call block
+        else:
             for call in calls:
                 if call.selector not in session.allowed_entrypoints: return 0
 
