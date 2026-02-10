@@ -16,7 +16,7 @@ Chipi Pay has built and deployed a **full-stack production system** for gasless,
 - **Modified Paymaster Backend** (Rust) — Forked from AVNU's paymaster, adapted for OpenZeppelin-based session accounts
 - **Forwarder Contract** (Cairo) — Whitelisted relayer that routes sponsored transactions
 
-The system is live on Starknet mainnet with class hash `0x35a2251aca25daba18a5d8950deffa8372a7d84774554e75283cb85552eebc9` (v32), audited three times by Nethermind (January and February 2026), and backed by 46 passing tests.
+The system is live on Starknet mainnet with class hash `0x35a2251aca25daba18a5d8950deffa8372a7d84774554e75283cb85552eebc9` (v32), audited four times by Nethermind (January and February 2026, final scan: 0 findings), and backed by 46 passing tests.
 
 ### The Full Stack
 
@@ -366,10 +366,11 @@ AVNU operates the primary paymaster infrastructure on Starknet and authored SNIP
 
 **Role**: Security auditing
 
-Nethermind audited both our session account contract and AVNU's paymaster. Their AuditAgent performed three scans of our contract:
+Nethermind audited both our session account contract and AVNU's paymaster. Their AuditAgent performed four scans of our contract:
 - **January 2026**: 10 findings (3 High fixed, 1 High disputed, 1 High accepted, 2 Medium resolved, 1 Low fixed, 2 Best Practice fixed)
 - **February 2026 (scan 2)**: 3 findings (1 High fixed, 1 Medium accepted, 1 Low fixed)
 - **February 2026 (scan 3)**: 5 findings (2 High fixed — 1 unique + 1 duplicate, 2 Low fixed, 1 Info fixed)
+- **February 2026 (scan 4)**: 0 findings — clean bill of health
 
 ### Bibliotheca DAO
 
@@ -524,11 +525,15 @@ Forked AVNU's paymaster (`openzep` branch) to work with our account and achieve 
 
 **Systemic fix**: Added self-call block — sessions with empty whitelist cannot target the account contract at all. This eliminates the entire class of privilege escalation via self-calls that audits 1→2→3 kept discovering (each audit found new OZ selectors not in the denylist).
 
+### Phase 7: Fourth Nethermind Audit (February 2026)
+
+0 findings. Clean report on v32 (commit `9be9629b`). The self-call block and expanded blocklist eliminated the systemic vulnerability class. Findings trajectory: **10 → 3 → 5 → 0**.
+
 ### Current State
 
 - **Production on mainnet**: Class hash `0x35a2251aca25daba18a5d8950deffa8372a7d84774554e75283cb85552eebc9` (v32)
 - **46 tests passing**: 21 session validation + 22 audit regression + 3 SNIP-9 compatibility
-- **Three Nethermind audits**: All critical findings fixed, accepted tradeoffs documented
+- **Four Nethermind audits**: All critical findings fixed, accepted tradeoffs documented, audit 4 returned 0 findings
 - **Dependencies**: OpenZeppelin Cairo Contracts v2.0.0, AVNU Contracts Lib v0.1.0, Starknet >= 2.8.0
 
 ---
@@ -545,7 +550,7 @@ Thank you for creating the ecosystem where native account abstraction thrives. T
 
 ### Nethermind
 
-Two rigorous audits that found real vulnerabilities and made our contract significantly more secure. The nested `__execute__` bypass (audit 2, finding #1) was a particularly subtle privilege escalation that we would not have caught without their review.
+Four rigorous audits that found real vulnerabilities and made our contract significantly more secure. The nested `__execute__` bypass (audit 2, finding #1) and `set_public_key` account takeover (audit 3, finding #1) were particularly subtle privilege escalations that we would not have caught without their review. Audit 4 returned a clean report with 0 findings, confirming that the self-call block and expanded blocklist eliminated the systemic vulnerability class.
 
 ### AVNU
 

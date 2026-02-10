@@ -35,16 +35,16 @@ A production-ready Cairo smart contract that combines **session keys** with **SN
 | **Class Hash** | `0x35a2251aca25daba18a5d8950deffa8372a7d84774554e75283cb85552eebc9` |
 | **Contract Address** | `0x03062f8ec52749beae94daee793871e60a4f71fdee577e9d9fb0c61260024806` |
 | **Network** | Starknet Mainnet |
-| **Version** | v32 (Audit 1 + 2 + 3 Compliant) |
+| **Version** | v32 (Audit 1 + 2 + 3 + 4 Compliant) |
 | **Status** | Live on Mainnet |
-| **Audit** | Nethermind AuditAgent — January & February 2026 (3 scans) |
+| **Audit** | Nethermind AuditAgent — January & February 2026 (4 scans, final: 0 findings) |
 | **Voyager** | [View Contract Class](https://voyager.online/class/0x035a2251aca25daba18a5d8950deffa8372a7d84774554e75283cb85552eebc9) |
 
 ---
 
 ## 🔍 Security Audit
 
-This contract was audited by **Nethermind AuditAgent** in January 2026. The audit identified 10 findings across the session key and outside execution logic. All valid findings have been fixed in this version:
+This contract was audited by **Nethermind AuditAgent** across 4 scans in January–February 2026. The initial audit identified 10 findings across the session key and outside execution logic. All valid findings have been fixed, and audit 4 returned **0 findings**:
 
 | Severity | Findings | Status |
 |----------|----------|--------|
@@ -85,6 +85,23 @@ A third Nethermind AuditAgent scan was performed on v31 (commit `6424aa0`). It i
 
 Full report: [audit/audit_agent_report_3_4bedc58d-5c45-4607-b61a-d3f040f8a783.pdf](audit/audit_agent_report_3_4bedc58d-5c45-4607-b61a-d3f040f8a783.pdf)
 Detailed responses: [AUDIT_RESPONSE_3.md](AUDIT_RESPONSE_3.md)
+
+### Audit 4 — February 2026 (Clean Report)
+
+A fourth Nethermind AuditAgent scan was performed on v32 (commit `9be9629b`). Result: **0 findings**. Zero High, Zero Medium, Zero Low, Zero Info, Zero Best Practices.
+
+| Severity | Findings |
+|----------|----------|
+| High | 0 |
+| Medium | 0 |
+| Low | 0 |
+| Info | 0 |
+| Best Practice | 0 |
+
+The self-call block and expanded blocklist introduced in v32 eliminated the systemic vulnerability class that drove findings in audits 1–3. Findings trajectory: **10 → 3 → 5 → 0**.
+
+Full report: [audit/audit_agent_report_4_3d9877bd-6f4e-46c3-945d-32e3872e6264.pdf](audit/audit_agent_report_4_3d9877bd-6f4e-46c3-945d-32e3872e6264.pdf)
+Detailed responses: [AUDIT_RESPONSE_4.md](AUDIT_RESPONSE_4.md)
 
 ---
 

@@ -15,6 +15,7 @@ This document tracks all contract class declarations on Starknet mainnet.
   - Audit 1: Nethermind AuditAgent, January 2026
   - Audit 2: Nethermind AuditAgent, February 2026
   - Audit 3: Nethermind AuditAgent, February 2026 — [Full Report](audit/audit_agent_report_3_4bedc58d-5c45-4607-b61a-d3f040f8a783.pdf)
+  - Audit 4: Nethermind AuditAgent, February 2026 — 0 findings — [Full Report](audit/audit_agent_report_4_3d9877bd-6f4e-46c3-945d-32e3872e6264.pdf)
 
 ### What changed from v31
 

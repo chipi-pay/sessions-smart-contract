@@ -44,7 +44,7 @@ This fragmentation creates concrete problems:
 
 - **Paymaster incompatibility**: AVNU's upstream paymaster crashes for accounts without SRC-5 SNIP-9 registration and has no fallback for version detection. We proved this by building a forked paymaster with ABI-based fallback, U128 timestamp alignment, and graceful error handling — achieving universal compatibility with Chipi, Argent, Braavos, and any custom OZ account.
 - **dApp fragmentation**: Applications must build separate session integrations for each wallet.
-- **Audit duplication**: Each implementation requires its own security review. Nethermind audited our contract twice; Argent, Braavos, and Cartridge each have separate audit surfaces.
+- **Audit duplication**: Each implementation requires its own security review. Nethermind audited our contract four times; Argent, Braavos, and Cartridge each have separate audit surfaces.
 
 **A standard enables**: any paymaster works with any session account, any dApp SDK works with any session wallet, and the community shares a single audited specification.
 
@@ -359,7 +359,7 @@ Each audit discovered new selectors exposed by OZ embedded implementations. The 
 
 ### Audit History
 
-The reference implementation has been audited three times by Nethermind:
+The reference implementation has been audited four times by Nethermind:
 
 **Audit 1 (January 2026)** — 10 findings:
 - Finding #1 (High): Unrestricted `__execute__` caller — defense-in-depth caller check added
@@ -384,6 +384,9 @@ The reference implementation has been audited three times by Nethermind:
 - Finding #3 (Low): Nested `execute_from_outside_v2` double-consumption — fixed (blocklist + self-call block)
 - Finding #4 (Low): Missing SRC-5 interface registration — fixed
 - Finding #5 (Info): Malleable `valid_until` in SNIP-9 path — fixed (bind to stored session)
+
+**Audit 4 (February 2026)** — 0 findings:
+- Clean bill of health. The self-call block and expanded blocklist eliminated the systemic vulnerability class.
 
 ### Session Hash Does Not Bind Full Transaction Envelope
 
@@ -428,7 +431,7 @@ Future extensions to this SNIP MAY add optional calldata constraints (e.g., maxi
 - **Production class hash**: `0x35a2251aca25daba18a5d8950deffa8372a7d84774554e75283cb85552eebc9` (v32)
 - **Network**: Starknet Mainnet
 - **Tests**: 46 passing (21 session validation + 22 audit regression + 3 SNIP-9 compatibility)
-- **Auditor**: Nethermind (January 2026, February 2026 — 3 scans)
+- **Auditor**: Nethermind (January 2026, February 2026 — 4 scans, final: 0 findings)
 - **Dependencies**: OpenZeppelin Cairo Contracts v2.0.0, AVNU Contracts Lib v0.1.0, Starknet >= 2.8.0
 
 ### Reference Interface Definitions

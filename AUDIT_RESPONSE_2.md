@@ -63,5 +63,5 @@ Findings #1 and #3 are fixed in v31. Finding #2 (session hash scope) is an **acc
 - Re-evaluate envelope binding once session-key standards or paymaster alignment is clarified.
 - Keep the regression tests for nested execution blocking and `execute_from_outside_v2` behavior.
 - Re-run a targeted review or rescan after any future hash-format change.
-- Submit to a third auditor for independent verification before final production release.
+- ~~Submit to a third auditor for independent verification before final production release.~~ Done — audits 3 and 4 completed, audit 4 returned 0 findings. See [AUDIT_RESPONSE_3.md](AUDIT_RESPONSE_3.md) and [AUDIT_RESPONSE_4.md](AUDIT_RESPONSE_4.md).
 

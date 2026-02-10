@@ -203,4 +203,4 @@ All fixes verified on Starknet mainnet:
 | Paymaster Owner Signature | [0x8520db...](https://voyager.online/tx/0x8520db3c33777f3efbbf1e0c8255bd1c5acf4c6a4c88afd01fefbadbd0e8b) |
 | Paymaster Session Signature | [0x4f0e4d...](https://voyager.online/tx/0x4f0e4dd3bc3c172ed6151f270b1ea7385eefa334017d9502d470aaa2b639361) |
 
-**Production Contract**: `0x03062f8ec52749beae94daee793871e60a4f71fdee577e9d9fb0c61260024806` (v31 pending — see [DEPLOYMENT.md](DEPLOYMENT.md))
+**Production Contract**: `0x03062f8ec52749beae94daee793871e60a4f71fdee577e9d9fb0c61260024806` (v32 — see [DEPLOYMENT.md](DEPLOYMENT.md))
