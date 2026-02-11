@@ -46,7 +46,7 @@ This diversity creates coordination challenges:
 
 - **Paymaster integration complexity**: Integrating a custom session account with AVNU's paymaster revealed that implementation details matter: incorrect caller fields, SNIP-12 timestamp type mismatches (Felt vs U128), and missing SRC-5 interface registration caused signature validation failures — all on the account side. AVNU's paymaster works correctly with properly configured accounts. This experience demonstrates the value of a shared specification.
 - **dApp fragmentation**: Applications must build separate session integrations for each wallet.
-- **Audit duplication**: Each implementation requires its own security review. Nethermind audited the reference implementation four times; Argent, Braavos, and Cartridge each have separate audit surfaces.
+- **Audit duplication**: Each implementation requires its own security review. Nethermind's AuditAgent (AI-powered auditing tool) scanned the reference implementation four times; Argent, Braavos, and Cartridge each have separate audit surfaces.
 
 **A standard enables**: any paymaster works with any session account, any dApp SDK works with any session wallet, and the community shares a single audited specification.
 
@@ -174,15 +174,15 @@ selector!("setPublicKey")               // Prevents owner key rotation (OZ Publi
 selector!("execute_from_outside_v2")    // Prevents nested SNIP-9 double-consumption
 ```
 
-**Rationale for `__execute__`**: A session key that can call `__execute__` directly can pass arbitrary nested calls. Since `__execute__` checks that the caller is `0` (sequencer) or `self` (the account), and the account calling its own `__execute__` satisfies this check, the nested calls would execute with full account privileges — bypassing all session restrictions. This was identified as a High severity finding in Nethermind's February 2026 audit.
+**Rationale for `__execute__`**: A session key that can call `__execute__` directly can pass arbitrary nested calls. Since `__execute__` checks that the caller is `0` (sequencer) or `self` (the account), and the account calling its own `__execute__` satisfies this check, the nested calls would execute with full account privileges — bypassing all session restrictions. This was identified as a High severity finding by Nethermind's AuditAgent in February 2026.
 
-**Rationale for `set_public_key`/`setPublicKey`**: OpenZeppelin's `AccountComponent` embeds `PublicKeyImpl` and `PublicKeyCamelImpl`, exposing owner key rotation. A session key calling these functions achieves full account takeover. Identified as a High severity finding in Nethermind's February 2026 audit (scan 3).
+**Rationale for `set_public_key`/`setPublicKey`**: OpenZeppelin's `AccountComponent` embeds `PublicKeyImpl` and `PublicKeyCamelImpl`, exposing owner key rotation. A session key calling these functions achieves full account takeover. Identified as a High severity finding by Nethermind's AuditAgent (scan 3).
 
-**Rationale for `execute_from_outside_v2`**: Allowing session keys to call `execute_from_outside_v2` creates nested SNIP-9 execution, potentially causing double nonce consumption or double call-counter increments. Identified as a Low severity finding in Nethermind's February 2026 audit (scan 3).
+**Rationale for `execute_from_outside_v2`**: Allowing session keys to call `execute_from_outside_v2` creates nested SNIP-9 execution, potentially causing double nonce consumption or double call-counter increments. Identified as a Low severity finding by Nethermind's AuditAgent (scan 3).
 
 Implementations MAY extend this blocklist with additional selectors but MUST NOT remove any of the seven listed above.
 
-**Self-call block (RECOMMENDED)**: In addition to the blocklist, implementations SHOULD block ALL calls where `call.to == get_contract_address()` when `allowed_entrypoints_len == 0` (empty whitelist). This eliminates the entire class of privilege escalation via self-calls, protecting against any future OZ embedded impl or upgrade exposing new privileged selectors. The denylist approach is inherently fragile — each of three Nethermind audits found selectors not in the blocklist. The self-call block converts this from an open-ended problem to a closed one.
+**Self-call block (RECOMMENDED)**: In addition to the blocklist, implementations SHOULD block ALL calls where `call.to == get_contract_address()` when `allowed_entrypoints_len == 0` (empty whitelist). This eliminates the entire class of privilege escalation via self-calls, protecting against any future OZ embedded impl or upgrade exposing new privileged selectors. The denylist approach is inherently fragile — each of three Nethermind AuditAgent scans found selectors not in the blocklist. The self-call block converts this from an open-ended problem to a closed one.
 
 ### Part E: Stale Entrypoint Cleanup
 
@@ -344,11 +344,11 @@ The hash format (Part F.4) uses `u128` for timestamp fields, matching OpenZeppel
 
 ### `__execute__` in the Blocklist
 
-Blocking `__execute__` for session keys prevents nested execution privilege escalation. Without this, a session key could call the account's `__execute__` function directly, which would then execute arbitrary calls as if they came from the account itself — bypassing all session restrictions. This was identified as a High severity vulnerability in Nethermind's February 2026 audit of the reference implementation.
+Blocking `__execute__` for session keys prevents nested execution privilege escalation. Without this, a session key could call the account's `__execute__` function directly, which would then execute arbitrary calls as if they came from the account itself — bypassing all session restrictions. This was identified as a High severity vulnerability by Nethermind's AuditAgent in February 2026.
 
 ### Call Consumption After Validation
 
-Incrementing `calls_used` after signature verification (not before) prevents an off-by-one error: a session with `max_calls = 1` would otherwise fail on its first (and only) valid use because the counter would already be at 1 when the limit check runs. This was identified as a Low severity finding in Nethermind's February 2026 audit.
+Incrementing `calls_used` after signature verification (not before) prevents an off-by-one error: a session with `max_calls = 1` would otherwise fail on its first (and only) valid use because the counter would already be at 1 when the limit check runs. This was identified as a Low severity finding by Nethermind's AuditAgent in February 2026.
 
 ### AI Agent Delegation
 
@@ -371,7 +371,7 @@ This separation is deliberate. As the [SNIP-6 discussion](https://community.star
 
 ### Denylist Fragility and Self-Call Block
 
-The admin selector blocklist is defense-in-depth but inherently fragile. Across three Nethermind audits:
+The admin selector blocklist is defense-in-depth but inherently fragile. Across three Nethermind AuditAgent scans:
 - Audit 1: Found `upgrade`, `add_or_update_session_key`, `revoke_session_key` missing
 - Audit 2: Found `__execute__` missing
 - Audit 3: Found `set_public_key`, `setPublicKey`, `execute_from_outside_v2` missing
@@ -380,7 +380,7 @@ Each audit discovered new selectors exposed by OZ embedded implementations. The 
 
 ### Audit History
 
-The reference implementation has been audited four times by Nethermind:
+The reference implementation has been scanned four times by Nethermind's AuditAgent (AI-powered auditing tool):
 
 **Audit 1 (January 2026)** — 10 findings:
 - Finding #1 (High): Unrestricted `__execute__` caller — defense-in-depth caller check added
@@ -452,7 +452,7 @@ Future extensions to this SNIP MAY add optional calldata constraints (e.g., maxi
 - **Production class hash**: `0x35a2251aca25daba18a5d8950deffa8372a7d84774554e75283cb85552eebc9` (v32)
 - **Network**: Starknet Mainnet
 - **Tests**: 46 passing (21 session validation + 22 audit regression + 3 SNIP-9 compatibility)
-- **Auditor**: Nethermind (January 2026, February 2026 — 4 scans, final: 0 findings)
+- **Auditor**: Nethermind AuditAgent (AI-powered, January 2026, February 2026 — 4 scans, final: 0 findings)
 - **Dependencies**: OpenZeppelin Cairo Contracts v2.0.0, AVNU Contracts Lib v0.1.0, Starknet >= 2.8.0
 
 ### Reference Interface Definitions
@@ -530,7 +530,7 @@ This proposal builds on prior work across the Starknet ecosystem:
 - **Cartridge** — Passkey infrastructure and gaming session validation (Controller, Flippy Flop at 127 TPS)
 - **AVNU** — SNIP-29 paymaster standard, SNIP-9 co-authorship, open-source paymaster reference implementation
 - **OpenZeppelin** — Cairo Contracts component architecture (`AccountComponent`, `SRC5Component`, `SRC9Component`) that makes session key extensions possible
-- **Nethermind** — Four rigorous security audits that identified critical vulnerabilities and shaped the admin blocklist, self-call block, and validation ordering
+- **Nethermind** — Four AuditAgent scans that identified critical vulnerabilities and shaped the admin blocklist, self-call block, and validation ordering. A human-led audit is a logical next step as the standard matures.
 - **Starknet Foundation** — Ecosystem infrastructure, Propulsion Program, and the vision that blockchain UX should be invisible
 - **EthSign** — Forum proposal for function call delegation (October 2024)
 

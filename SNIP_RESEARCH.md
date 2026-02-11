@@ -16,7 +16,7 @@ Chipi Pay has built and deployed a **full-stack production system** for gasless,
 - **Modified Paymaster Backend** (Rust) — Forked from AVNU's paymaster, adapted for OpenZeppelin-based session accounts
 - **Forwarder Contract** (Cairo) — Whitelisted relayer that routes sponsored transactions
 
-The system is live on Starknet mainnet with class hash `0x35a2251aca25daba18a5d8950deffa8372a7d84774554e75283cb85552eebc9` (v32), audited four times by Nethermind (January and February 2026, final scan: 0 findings), and backed by 46 passing tests.
+The system is live on Starknet mainnet with class hash `0x35a2251aca25daba18a5d8950deffa8372a7d84774554e75283cb85552eebc9` (v32), scanned four times by Nethermind's AuditAgent (AI-powered auditing tool, January and February 2026, final scan: 0 findings), and backed by 46 passing tests.
 
 ### The Full Stack
 
@@ -188,7 +188,7 @@ A development fork (`github.com/chipi-pay`, `openzep` branch, based on `github.c
 - dApps verifying ownership or delegation off-chain
 - Compatibility with any protocol that checks ERC-1271
 
-**Important tradeoff (Nethermind audit finding #5)**: `is_valid_signature` receives only `(hash, signature)` — no call context. This means it cannot enforce selector whitelists. We enforce whitelists in `execute_from_outside_v2` where calls are available. This is an accepted architectural tradeoff for paymaster compatibility.
+**Important tradeoff (Nethermind AuditAgent finding #5)**: `is_valid_signature` receives only `(hash, signature)` — no call context. This means it cannot enforce selector whitelists. We enforce whitelists in `execute_from_outside_v2` where calls are available. This is an accepted architectural tradeoff for paymaster compatibility.
 
 ---
 
@@ -206,7 +206,7 @@ The fix was switching the account's hash format to `U128` timestamps (matching t
 
 **Lesson 2: SRC-5 Interface Registration**
 
-AVNU's paymaster uses SRC-5 `supports_interface()` to detect SNIP-9 support. The session account initially did not register its SNIP-9 interface IDs via SRC-5 (this was identified and fixed in Nethermind's audit 3, finding #4). All major accounts (Ready, Braavos, OZ) properly register SNIP-9 V2 via SRC-5. A development fork added ABI-based fallback as a workaround while debugging, before the root cause was identified.
+AVNU's paymaster uses SRC-5 `supports_interface()` to detect SNIP-9 support. The session account initially did not register its SNIP-9 interface IDs via SRC-5 (this was identified and fixed in Nethermind AuditAgent scan 3, finding #4). All major accounts (Ready, Braavos, OZ) properly register SNIP-9 V2 via SRC-5. A development fork added ABI-based fallback as a workaround while debugging, before the root cause was identified.
 
 Notably, session signature passthrough was NOT a problem — AVNU already uses `Vec<Felt>` internally, so 4-element session signatures pass through unmodified.
 
@@ -360,9 +360,9 @@ AVNU operates the primary paymaster infrastructure on Starknet and authored SNIP
 
 ### Nethermind
 
-**Role**: Security auditing
+**Role**: Security auditing (AI-powered)
 
-Nethermind audited the session account contract. Their AuditAgent performed four scans:
+Nethermind's AuditAgent (AI-powered auditing tool) performed four scans of the session account contract:
 - **January 2026**: 10 findings (3 High fixed, 1 High disputed, 1 High accepted, 2 Medium resolved, 1 Low fixed, 2 Best Practice fixed)
 - **February 2026 (scan 2)**: 3 findings (1 High fixed, 1 Medium accepted, 1 Low fixed)
 - **February 2026 (scan 3)**: 5 findings (2 High fixed — 1 unique + 1 duplicate, 2 Low fixed, 1 Info fixed)
@@ -534,7 +534,7 @@ Integrated with AVNU's paymaster, creating a development fork (`openzep` branch)
 - Built forwarder contract with whitelist and sponsored execution
 - Upstream PR [#62](https://github.com/avnu-labs/paymaster/pull/62) closed after confirming AVNU's paymaster works correctly with properly configured accounts
 
-### Phase 4: First Nethermind Audit (January 2026)
+### Phase 4: First Nethermind AuditAgent Scan (January 2026)
 
 10 findings across the session key and outside execution logic:
 - **3 High findings fixed**: Session whitelist enforcement (#2, #4), admin selector blocklist (#3, #8)
@@ -545,14 +545,14 @@ Integrated with AVNU's paymaster, creating a development fork (`openzep` branch)
 - **1 Low fixed**: Session can revoke sessions (#8) — blocked via admin selector blocklist
 - **2 Best Practice fixed**: Safe type conversion (#9), stale entrypoint cleanup (#10)
 
-### Phase 5: Second Nethermind Audit (February 2026)
+### Phase 5: Second Nethermind AuditAgent Scan (February 2026)
 
 3 additional findings:
 - **1 High fixed**: Nested `__execute__` bypass (#1) — blocked `__execute__` selector for sessions
 - **1 Medium accepted**: Session hash doesn't bind full tx envelope (#2) — accepted for paymaster compatibility, documented
 - **1 Low fixed**: Call consumed before validation in SNIP-9 path (#3) — reordered to consume after validation
 
-### Phase 6: Third Nethermind Audit (February 2026)
+### Phase 6: Third Nethermind AuditAgent Scan (February 2026)
 
 5 additional findings (2 High — same finding filed as duplicate, 2 Low, 1 Info):
 - **1 High fixed**: `set_public_key`/`setPublicKey` not in blocklist (#1) — OZ owner rotation selectors added to blocklist
@@ -563,7 +563,7 @@ Integrated with AVNU's paymaster, creating a development fork (`openzep` branch)
 
 **Systemic fix**: Added self-call block — sessions with empty whitelist cannot target the account contract at all. This eliminates the entire class of privilege escalation via self-calls that audits 1→2→3 kept discovering (each audit found new OZ selectors not in the denylist).
 
-### Phase 7: Fourth Nethermind Audit (February 2026)
+### Phase 7: Fourth Nethermind AuditAgent Scan (February 2026)
 
 0 findings. Clean report on v32 (commit `9be9629b`). The self-call block and expanded blocklist eliminated the systemic vulnerability class. Findings trajectory: **10 → 3 → 5 → 0**.
 
@@ -571,7 +571,7 @@ Integrated with AVNU's paymaster, creating a development fork (`openzep` branch)
 
 - **Production on mainnet**: Class hash `0x35a2251aca25daba18a5d8950deffa8372a7d84774554e75283cb85552eebc9` (v32)
 - **46 tests passing**: 21 session validation + 22 audit regression + 3 SNIP-9 compatibility
-- **Four Nethermind audits**: All critical findings fixed, accepted tradeoffs documented, audit 4 returned 0 findings
+- **Four Nethermind AuditAgent scans**: All critical findings fixed, accepted tradeoffs documented, scan 4 returned 0 findings. A human-led audit is a logical next step.
 - **Dependencies**: OpenZeppelin Cairo Contracts v2.0.0, AVNU Contracts Lib v0.1.0, Starknet >= 2.8.0
 
 ### Phase 8: Standards Submission
@@ -596,7 +596,7 @@ Thank you for creating the ecosystem where native account abstraction thrives. T
 
 ### Nethermind
 
-Four rigorous audits that found real vulnerabilities and made our contract significantly more secure. The nested `__execute__` bypass (audit 2, finding #1) and `set_public_key` account takeover (audit 3, finding #1) were particularly subtle privilege escalations that we would not have caught without their review. Audit 4 returned a clean report with 0 findings, confirming that the self-call block and expanded blocklist eliminated the systemic vulnerability class.
+Four AuditAgent scans that found real vulnerabilities and made the contract significantly more secure. The nested `__execute__` bypass (scan 2, finding #1) and `set_public_key` account takeover (scan 3, finding #1) were particularly subtle privilege escalations that we would not have caught without their tool. Scan 4 returned a clean report with 0 findings, confirming that the self-call block and expanded blocklist eliminated the systemic vulnerability class. A human-led audit is a logical next step as the standard matures.
 
 ### AVNU
 
