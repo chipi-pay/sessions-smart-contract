@@ -423,6 +423,22 @@ A development fork was created while debugging, but all root causes were on the 
 
 Session keys are not just a UX convenience — they are a network usage multiplier. Every confirmation popup a user skips is a transaction that happens instead of being abandoned. Every gasless session is a user who stays instead of churning. The primitives defined here — time-limited delegation, call-limited authorization, selector-restricted access, and gasless submission — directly increase the number of transactions flowing through the network.
 
+### Passkeys + Session Keys: The Full UX Stack
+
+Starknet's account ecosystem is converging on native passkeys (WebAuthn/secp256r1) for owner authentication. Braavos' Hardware Signer uses the device's Secure Enclave for P256 signing. Cartridge's Controller uses WebAuthn passkeys for seedless onboarding. In the [SNIP-6 forum discussion](https://community.starknet.io/t/snip-starknet-standard-account/95665), Xiang (April 2024) confirmed implementing native passkeys and endorsed the `Array<felt252>` signature format to support them.
+
+This matters because passkeys and session keys are complementary layers:
+
+| Layer | Problem | Solution |
+|---|---|---|
+| **Authentication** (passkeys) | "How do I prove I own this account?" | Biometrics (Face ID, fingerprint) via secp256r1 |
+| **Authorization** (session keys) | "What can a delegate do on my behalf?" | Time-limited, call-limited, selector-restricted delegation |
+| **Sponsorship** (paymaster) | "Who pays for gas?" | SNIP-9 outside execution + SNIP-29 paymaster |
+
+Passkeys solve onboarding — no seed phrases, just biometrics. Session keys solve interaction — no popups, just scoped delegation. Together they make self-custodial wallets indistinguishable from Web2 apps. Cartridge's Flippy Flop demonstrated this full stack in production: passkey for login, session key for gameplay, paymaster for gas — 127 TPS with zero user friction.
+
+Critically, session keys are independent of the owner's authentication method. An account that uses passkeys for owner auth can implement `ISessionKeyManager` without modification — the owner creates sessions via passkey signature, and the session key itself uses lightweight Stark-curve ECDSA for programmatic signing. This separation means session key standardization benefits the entire ecosystem regardless of which authentication methods individual wallets adopt.
+
 ### Gaming
 
 Session keys are critical for blockchain gaming, where users make frequent, low-value transactions that cannot each require a wallet popup.

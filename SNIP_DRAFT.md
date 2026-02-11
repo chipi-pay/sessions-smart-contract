@@ -50,6 +50,8 @@ This diversity creates coordination challenges:
 
 **A standard enables**: any paymaster works with any session account, any dApp SDK works with any session wallet, and the community shares a single audited specification.
 
+**Why now**: Starknet's account ecosystem is converging on native passkeys (WebAuthn/secp256r1) for owner authentication — Cartridge's Controller, Braavos' Hardware Signer, and discussions in the [SNIP-6 forum thread](https://community.starknet.io/t/snip-starknet-standard-account/95665) confirm this direction. Passkeys make self-custodial wallets the default onboarding path: no seed phrases, just biometrics. But passkeys solve *authentication* — they prove who you are. Session keys solve *authorization* — they define what a delegate can do. As passkey-based wallets become the default, session key standardization becomes essential: every new user who onboards via Face ID will need scoped, revocable delegation for dApps, agents, and automated workflows. These are complementary layers of the same UX stack.
+
 ## Specification
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in RFC 2119.
@@ -358,6 +360,12 @@ Session keys are a natural fit for autonomous AI agents that need restricted on-
 - Non-custodial delegation (agent never holds the owner key)
 
 This maps directly to the `SessionData` structure defined in Part A. A standard session key interface enables any compliant agent framework to work with any compliant wallet — without custom integration per wallet vendor.
+
+### Passkey Compatibility
+
+This SNIP is independent of the owner's authentication method. The `ISessionKeyManager` interface defines how session keys are created, validated, and revoked — not how the owner proves identity. An account that uses passkeys (secp256r1/WebAuthn) for owner authentication can implement `ISessionKeyManager` without modification: the owner calls `add_or_update_session_key` using their passkey signature, and the session key itself uses standard Stark-curve ECDSA for lightweight, programmatic signing by dApps and agents.
+
+This separation is deliberate. As the [SNIP-6 discussion](https://community.starknet.io/t/snip-starknet-standard-account/95665) evolves toward `Array<felt252>` signatures to accommodate passkeys and other authentication methods, the 4-element session signature format defined here remains compatible — it is already an array of `felt252` values.
 
 ## Security Considerations
 
