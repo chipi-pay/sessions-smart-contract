@@ -131,16 +131,16 @@ fn execute_from_outside_v2(ref self: ContractState, outside_execution: OutsideEx
 SNIP-12 is where the most painful incompatibility lives. Both OpenZeppelin's `SRC9Component` and our contract use SNIP-12 Revision 1. The difference is in how timestamp fields are typed in the TypedData struct:
 
 - **u128 format** (OpenZeppelin / ecosystem standard): "Execute After" and "Execute Before" typed as `u128`
-- **felt format** (our early paymaster / starknet.js): Same fields typed as `felt252`
+- **felt format** (early development / starknet.js): Same fields typed as `felt252`
 
 Different field types produce different struct type hashes, which produce different message hashes, which break signature validation.
 
-When a user signs an `OutsideExecution` message with one revision's encoding and the contract validates with the other, the hashes don't match and the signature fails. This was the root cause of our initial paymaster incompatibility: our early paymaster fork used `felt` for timestamps (producing a different struct type hash), while Argent/Braavos/standard OZ accounts only accept `u128`. We resolved this by switching the paymaster to U128 (matching the OZ standard) and keeping dual-hash support in the contract as a compatibility bridge.
+When a user signs an `OutsideExecution` message with one format's encoding and the contract validates with the other, the hashes don't match and the signature fails. This was the root cause of the initial integration difficulty: the account contract initially used `felt` for timestamps (producing a different struct type hash), while Argent/Braavos/standard OZ accounts only accept `u128`. The fix was switching the account's hash format to U128 (matching the OZ standard) and keeping dual-hash support in the contract as a compatibility bridge.
 
-**Our solution in the contract**: Compute both hashes and try each:
+**The contract's solution**: Compute both hashes and try each:
 
 ```cairo
-// Try OZ standard hash first (u128 timestamps — matches our paymaster and all standard accounts)
+// Try OZ standard hash first (u128 timestamps — matches AVNU paymaster and all standard accounts)
 let oz_hash = outside_execution.get_message_hash(get_contract_address());
 let is_valid_oz = is_valid_signature(@self, oz_hash, sig_copy1);
 
@@ -168,14 +168,11 @@ The OZ hash (U128 timestamps) is tried first because it matches the current ecos
 | **What** | Standard interface for gas sponsoring on Starknet |
 | **Authors** | AVNU |
 | **Status** | Draft |
-| **How we use it** | Forked AVNU's paymaster backend, modified for OpenZeppelin-based session accounts |
+| **How we use it** | Integrated with AVNU's paymaster backend for gasless session transactions |
 
-SNIP-29 defines how paymasters discover, sponsor, and settle gas fees. AVNU's reference implementation is the de facto standard. We forked it because the unmodified paymaster:
+SNIP-29 defines how paymasters discover, sponsor, and settle gas fees. AVNU's reference implementation is the de facto standard. Integrating the session account with AVNU's paymaster revealed that proper account configuration is essential: correct SNIP-12 timestamp types (U128, not Felt) and proper SRC-5 interface registration are required for signature validation to succeed.
 
-1. Crashes when `supports_interface()` fails — custom accounts without SRC-5 registration cause hard errors
-2. Has no fallback for version detection — only uses SRC-5, so accounts that don't register SNIP-9 interface IDs are rejected
-
-Our fork (`github.com/chipi-pay`, based on `github.com/avnu-labs/paymaster`) on the `openzep` branch achieves **universal compatibility** — it works with Chipi session accounts, Ready (formerly Argent), Braavos, and any custom OZ account. Session signatures (4-element) pass through unmodified since AVNU already uses `Vec<Felt>` internally. We have submitted these improvements as an upstream PR: [avnu-labs/paymaster#62](https://github.com/avnu-labs/paymaster/pull/62).
+A development fork (`github.com/chipi-pay`, `openzep` branch, based on `github.com/avnu-labs/paymaster`) was created while debugging. After identifying that the root causes were on the account side (wrong timestamp types, missing SRC-5 registration), upstream PR [avnu-labs/paymaster#62](https://github.com/avnu-labs/paymaster/pull/62) was closed. AVNU's paymaster works correctly with properly configured accounts. Session signatures (4-element) pass through unmodified since AVNU already uses `Vec<Felt>` internally.
 
 ### 2.6 ERC-1271 — Signature Validation
 
@@ -195,44 +192,43 @@ Our fork (`github.com/chipi-pay`, based on `github.com/avnu-labs/paymaster`) on 
 
 ---
 
-## 3. The Paymaster: What We Had to Build
+## 3. The Paymaster: What We Learned
 
-### The Problems We Solved
+### Integration Lessons
 
-AVNU's paymaster was designed for Argent/Braavos accounts. When we tried to use it with our OpenZeppelin-based session account, two real problems emerged:
+Integrating a custom OpenZeppelin-based session account with AVNU's paymaster revealed how implementation details — not paymaster bugs — cause integration failures. Two lessons emerged:
 
-**Problem 1: SNIP-12 Timestamp Type Mismatch**
+**Lesson 1: SNIP-12 Timestamp Type Mismatch**
 
-Our initial paymaster fork used `Felt` for the "Execute After" and "Execute Before" fields in the SNIP-12 V2 TypedData. OpenZeppelin's `SRC9Component` uses `u128` for these fields. Different field types produce different struct type hashes, which produce different message hashes, which cause signature validation failure on any standard OZ/Argent/Braavos account.
+The session account initially used `Felt` for the "Execute After" and "Execute Before" fields in SNIP-12 V2 TypedData. OpenZeppelin's `SRC9Component` uses `u128` for these fields. Different field types produce different struct type hashes, which produce different message hashes, which cause signature validation failure on any standard OZ/Argent/Braavos account.
 
-We fixed this by switching the paymaster to `U128` timestamps (matching the OZ standard). Our session account's dual-hash check tries the OZ hash (U128) first, so it matches immediately.
+The fix was switching the account's hash format to `U128` timestamps (matching the OZ standard). The session account's dual-hash check tries the OZ hash (U128) first, so it matches immediately.
 
-**Problem 2: SRC-5 Version Detection Failure**
+**Lesson 2: SRC-5 Interface Registration**
 
-AVNU's paymaster uses SRC-5 `supports_interface()` to detect SNIP-9 support. When this call fails (custom accounts without SRC-5 registration), the paymaster propagates the error instead of falling back gracefully. Many custom accounts and early OZ accounts don't register SNIP-9 interface IDs.
-
-We fixed this with a multi-tier fallback: SRC-5 first, then ABI inspection of the account's class hash, then cached values. This makes the paymaster work with ANY SNIP-9 account.
+AVNU's paymaster uses SRC-5 `supports_interface()` to detect SNIP-9 support. The session account initially did not register its SNIP-9 interface IDs via SRC-5 (this was identified and fixed in Nethermind's audit 3, finding #4). All major accounts (Ready, Braavos, OZ) properly register SNIP-9 V2 via SRC-5. A development fork added ABI-based fallback as a workaround while debugging, before the root cause was identified.
 
 Notably, session signature passthrough was NOT a problem — AVNU already uses `Vec<Felt>` internally, so 4-element session signatures pass through unmodified.
 
-### Key Modifications in Our Fork (`openzep` branch)
+### What the Development Fork Changed
 
-| Modification | File | Why |
+A development fork (`openzep` branch) was created while debugging integration issues. The critical changes turned out to be on the account side (2 lines for timestamp types, proper SRC-5 registration). The fork also explored additional improvements:
+
+| Change | Scope | Outcome |
 |---|---|---|
-| Timestamps: `Felt` → `U128` | `transaction/mod.rs` | Match OZ SRC9Component struct type hash (2 lines changed) |
-| ABI-based fallback for version detection | `starknet/mod.rs` | SRC-5 → ABI inspection → cached value (universal compatibility) |
-| `fetch_class_hash_at()` method | `lib.rs` | Required for ABI fallback (fetch account class, inspect ABI) |
-| Debug `println!` removal | `execute.rs` | ~35 lines of `[PAYMASTER DEBUG]` logging removed for production |
-| `caller: 0x0` (ANY_CALLER) | Already in AVNU | Allow any whitelisted relayer |
+| Timestamps: `Felt` → `U128` | Account + fork | **Root cause fix** — account's hash format needed to match OZ standard |
+| SRC-5 interface registration | Account (v32) | **Root cause fix** — account needed proper SNIP-9 V2 registration |
+| ABI-based fallback for version detection | Fork only | Workaround added while debugging; not needed when accounts register properly |
+| Debug `println!` removal | Fork only | ~35 lines of logging removed for production |
 | Custom forwarder with `execute_sponsored()` | Forwarder contract | Separate gas-bearing from sponsored flows |
 
-### Universal Compatibility Achieved
+### Compatibility Confirmed
 
-Our paymaster now works with:
-- **Chipi session accounts**: Owner sig (2-element) + session sig (4-element)
-- **Argent accounts**: SRC-5 or ABI fallback detects V2, owner sig works
-- **Braavos accounts**: SRC-5 or ABI fallback detects V2, owner sig works
-- **Any custom OZ account**: ABI fallback detects `execute_from_outside_v2`
+AVNU's paymaster works correctly with properly configured accounts:
+- **Chipi session accounts** (post-fix): Owner sig (2-element) + session sig (4-element)
+- **Argent / Ready accounts**: SRC-5 detects V2, owner sig works
+- **Braavos accounts**: SRC-5 detects V2, owner sig works
+- **Any standard OZ account**: SRC-5 detects `execute_from_outside_v2`
 
 ### The Full Transaction Flow
 
@@ -358,7 +354,7 @@ Cartridge's Controller uses passkeys (WebAuthn) for authentication and has a ses
 
 **Role**: Paymaster infrastructure (SNIP-29)
 
-AVNU operates the primary paymaster infrastructure on Starknet and authored SNIP-29 (Paymaster Standard). They are also a co-author of SNIP-9. Our paymaster is forked from their open-source implementation at `github.com/avnu-labs/paymaster`.
+AVNU operates the primary paymaster infrastructure on Starknet and authored SNIP-29 (Paymaster Standard). They are also a co-author of SNIP-9. The reference implementation was tested and validated against their open-source paymaster at `github.com/avnu-labs/paymaster`.
 
 **Relevant work**: AVNU DEX, paymaster API, SNIP-29, SNIP-9 co-authorship.
 
@@ -366,7 +362,7 @@ AVNU operates the primary paymaster infrastructure on Starknet and authored SNIP
 
 **Role**: Security auditing
 
-Nethermind audited both our session account contract and AVNU's paymaster. Their AuditAgent performed four scans of our contract:
+Nethermind audited the session account contract. Their AuditAgent performed four scans:
 - **January 2026**: 10 findings (3 High fixed, 1 High disputed, 1 High accepted, 2 Medium resolved, 1 Low fixed, 2 Best Practice fixed)
 - **February 2026 (scan 2)**: 3 findings (1 High fixed, 1 Medium accepted, 1 Low fixed)
 - **February 2026 (scan 3)**: 5 findings (2 High fixed — 1 unique + 1 duplicate, 2 Low fixed, 1 Info fixed)
@@ -397,19 +393,19 @@ Every team has built their own session key implementation:
 | **Argent** | Backend guardian | 3+ elements (with guardian sig) | Argent-specific | Yes (native) |
 | **Braavos** | External library | Proof-based | Braavos-specific | Partial |
 | **Cartridge** | Controller + passkeys | WebAuthn | Controller-specific | Yes (custom) |
-| **Chipi Pay** | On-chain validation | 4 elements [pubkey, r, s, expiry] | Dual: OZ U128 + felt fallback | Yes (forked AVNU, universal) |
+| **Chipi Pay** | On-chain validation | 4 elements [pubkey, r, s, expiry] | Dual: OZ U128 + felt fallback | Yes (via AVNU) |
 | **Bibliotheca** | Arcade Accounts | Custom | Custom | No |
 
 These implementations are **mutually incompatible**. A dApp built for Argent sessions won't work with Braavos sessions. A paymaster built for one format can't validate another.
 
-### Concrete Example: The AVNU Incompatibility
+### Concrete Example: Production Integration Lessons
 
-We experienced this firsthand. AVNU's upstream paymaster:
-1. Crashes when `supports_interface()` fails for custom accounts
-2. Has no fallback for SNIP-9 version detection beyond SRC-5
-3. Originally used `Felt` timestamps in TypedData — mismatching OZ's `U128` struct type hash
+Integrating a custom session account with AVNU's paymaster demonstrated how small implementation mismatches cause cascading failures:
+1. The account used `Felt` timestamps in SNIP-12 TypedData — mismatching OZ's `U128` struct type hash
+2. The account did not register SNIP-9 V2 via SRC-5, causing interface detection to fail
+3. The account's caller field was misconfigured for outside execution
 
-To make our session account work, we **forked the paymaster codebase** and made 5 targeted changes (2 lines for timestamp types, ~40 lines for ABI fallback, ~35 lines of debug removal). The result: universal compatibility with Chipi, Ready (formerly Argent), Braavos, and any OZ account. We have submitted the universal compatibility changes as an upstream PR ([avnu-labs/paymaster#62](https://github.com/avnu-labs/paymaster/pull/62)). But this fork shouldn't be necessary — a standard should define these interactions so every paymaster works with every session account out of the box.
+A development fork was created while debugging, but all root causes were on the account side. After fixing the account (U128 timestamps, proper SRC-5 registration, correct caller field), AVNU's paymaster works correctly. Upstream PR [avnu-labs/paymaster#62](https://github.com/avnu-labs/paymaster/pull/62) was closed after confirming this. The experience underscores why a standard matters: clear specification of hash formats, interface registration, and signature conventions would prevent these integration issues entirely.
 
 ### What a Standard Unlocks
 
@@ -424,6 +420,8 @@ To make our session account work, we **forked the paymaster codebase** and made 
 ---
 
 ## 7. Real-World Impact
+
+Session keys are not just a UX convenience — they are a network usage multiplier. Every confirmation popup a user skips is a transaction that happens instead of being abandoned. Every gasless session is a user who stays instead of churning. The primitives defined here — time-limited delegation, call-limited authorization, selector-restricted access, and gasless submission — directly increase the number of transactions flowing through the network.
 
 ### Gaming
 
@@ -459,6 +457,31 @@ Every use case requires the same primitives:
 
 A standard that codifies these primitives would serve all of them.
 
+### AI Agents
+
+Autonomous AI agents are the fastest-growing use case for delegated on-chain access. AI crypto tokens grew from ~$9B to ~$27B market cap in 2025, and Gartner projects AI agents will touch $30T in transactions by 2030. As Brian Armstrong noted: "AI agents cannot get bank accounts, but they can get crypto wallets."
+
+Session key primitives map directly to agent authorization needs:
+
+| Session Key Primitive | Agent Need | Example |
+|---|---|---|
+| `valid_until` | Time-bounded access | Trading bot active only during market hours |
+| `max_calls` | Rate limiting | Prevent runaway execution loops |
+| `allowed_entrypoints` | Function scoping | Agent can only call `swap`, not `transfer` |
+| `revoke_session_key` | Kill switch | Emergency shutdown of misbehaving agent |
+| Non-custodial delegation | Key separation | Agent never holds the owner key |
+
+**Starknet-specific projects** already building in this direction:
+- **Giza** — Autonomous DeFi agents using session keys + account abstraction for verifiable ML inference on-chain
+- **Snak / Starknet Agent Kit** (KasarLabs) — Plugin architecture for AI agents with session key security for on-chain operations
+- **Eliza Framework** — Starknet plugin enabling conversational AI agents to execute on-chain transactions
+
+**Broader industry context**: a16z's "Agency by Design" framework identifies scoped delegation as essential for safe AI agent deployment. Safe's AI agent economy already drives >50% of Gnosis Chain transactions. Coinbase's AgentKit and ERC-8004 (Trustless Agents) are establishing similar patterns on Ethereum.
+
+Starknet has a structural advantage here: native account abstraction means agents don't need EOA workarounds. Session keys are the authorization layer that makes this safe. A standard session key interface enables any compliant agent framework to work with any compliant wallet — the same interoperability benefit that motivates this SNIP for human users applies equally to autonomous agents.
+
+Starknet's official positioning reflects this direction: the [verifiable AI agents portal](https://www.starknet.io/verifiable-ai-agents/) and the Agents Gizathon hackathon signal ecosystem commitment. The 2025 Ecosystem Report shows growth from 72 to 193 projects (168%), with AI agent infrastructure as a key vertical.
+
 ---
 
 ## 8. Our Journey
@@ -488,13 +511,12 @@ Implemented custom `execute_from_outside_v2` override to support session signatu
 
 ### Phase 3: Paymaster Integration
 
-Forked AVNU's paymaster (`openzep` branch) to work with our account and achieve universal compatibility:
-- Changed timestamp types from `Felt` to `U128` in V2 TypedData (matching OZ SRC9Component)
-- Added ABI-based fallback for SNIP-9 version detection (SRC-5 → ABI inspection → cached value)
-- Added `fetch_class_hash_at()` method for class-level ABI inspection
-- Removed ~35 lines of debug `println!` logging for production
+Integrated with AVNU's paymaster, creating a development fork (`openzep` branch) while debugging:
+- Identified root cause: account used `Felt` timestamps instead of `U128` in SNIP-12 TypedData (2-line fix on account side)
+- Identified root cause: account did not register SNIP-9 V2 via SRC-5 (fixed in audit 3)
+- Fork added ABI-based fallback as workaround before root causes were found
 - Built forwarder contract with whitelist and sponsored execution
-- Result: works with Chipi sessions, Argent, Braavos, and any custom OZ account
+- Upstream PR [#62](https://github.com/avnu-labs/paymaster/pull/62) closed after confirming AVNU's paymaster works correctly with properly configured accounts
 
 ### Phase 4: First Nethermind Audit (January 2026)
 
@@ -536,6 +558,14 @@ Forked AVNU's paymaster (`openzep` branch) to work with our account and achieve 
 - **Four Nethermind audits**: All critical findings fixed, accepted tradeoffs documented, audit 4 returned 0 findings
 - **Dependencies**: OpenZeppelin Cairo Contracts v2.0.0, AVNU Contracts Lib v0.1.0, Starknet >= 2.8.0
 
+### Phase 8: Standards Submission
+
+The SNIP process follows a defined lifecycle: **Draft → Review → Last Call (14 days) → Final**. The starting point is a forum thread at [community.starknet.io](https://community.starknet.io/c/development-proposals/snip/7), followed by a PR to [starknet-io/SNIPs](https://github.com/starknet-io/SNIPs).
+
+This is a long-term effort. SRC standards like SNIP-6 (Standard Account), SNIP-9 (Outside Execution), and SNIP-12 (Typed Data) have been in Review for 2+ years. Core protocol changes with StarkWare backing can move in 3–6 months, but interface standards require broad ecosystem consensus. SNIP editors check format and completeness, not merit — community consensus determines adoption.
+
+We welcome feedback from wallet teams, paymaster operators, dApp developers, and AI agent builders. A session key standard will only succeed if it accommodates the diversity of approaches that already exist in the ecosystem.
+
 ---
 
 ## 9. Acknowledgments
@@ -546,7 +576,7 @@ The foundation of everything. `AccountComponent`, `SRC5Component`, `SRC9Componen
 
 ### Starknet Foundation
 
-Thank you for creating the ecosystem where native account abstraction thrives. Through grants, the Propulsion program, and the vision that blockchain UX should be invisible, you made it possible for builders like us to push boundaries. The fact that session keys are even possible — natively, without L1 workarounds — is a testament to Starknet's architecture and the Foundation's commitment to advancing it.
+Thank you for creating the ecosystem where native account abstraction thrives. Through grants, the Propulsion Program, and the vision that blockchain UX should be invisible, you made it possible for builders like us to push boundaries. The Propulsion Program alone is funding 20+ gaming projects (up to $1M each), most of which will need session key functionality — standardization directly serves this cohort. The Foundation's grant infrastructure enabled this work to be built, audited, and proposed as a standard. The fact that session keys are even possible — natively, without L1 workarounds — is a testament to Starknet's architecture and the Foundation's commitment to advancing it.
 
 ### Nethermind
 
@@ -554,7 +584,7 @@ Four rigorous audits that found real vulnerabilities and made our contract signi
 
 ### AVNU
 
-For building the paymaster infrastructure that makes gasless transactions practical, and for open-sourcing the code that we forked. The incompatibilities we encountered are not bugs in their system — they're the natural consequence of building against a specific account model (Argent) in the absence of a standard. This is precisely the problem a SNIP should solve.
+For building the paymaster infrastructure that makes gasless transactions practical, and for open-sourcing the codebase. The integration issues we encountered turned out to be on our side — incorrect caller fields, wrong timestamp types, and missing SRC-5 registration. AVNU's paymaster works correctly with properly configured accounts. Florian Bellotti's review of our upstream PR helped us identify the root causes. This experience is precisely why a standard matters: clear specification prevents integration mismatches.
 
 ### The SNIP-9 Authors
 

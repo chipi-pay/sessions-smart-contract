@@ -2,7 +2,7 @@
 snip: TBD
 title: Session Key Management and Paymaster Interaction for Smart Accounts
 authors: Chipi Pay <https://github.com/chipi-pay>
-discussions-to: TBD
+discussions-to: TBD <!-- Must point to a community.starknet.io/c/development-proposals/snip topic -->
 status: Draft
 type: Standards Track
 category: SRC
@@ -29,22 +29,24 @@ Together, these components enable any compliant wallet to create session keys th
 
 ## Motivation
 
-Session keys are the most impactful UX improvement for on-chain applications. They allow users to delegate limited, time-bounded authority to a secondary key, enabling gasless and popup-free interactions for gaming, DeFi automation, social apps, and recurring payments.
+Session keys are the most impactful UX improvement for on-chain applications. They allow users to delegate limited, time-bounded authority to a secondary key, enabling gasless and popup-free interactions for gaming, DeFi automation, social apps, recurring payments, and autonomous AI agents.
 
-**The problem**: Every team has built their own incompatible implementation.
+**Current state**: Multiple teams have independently built session key implementations, each optimized for different use cases.
 
 | Team | Approach | Signature Format | Paymaster Compatible |
 |------|----------|-----------------|---------------------|
 | Argent | Backend guardian | 3+ elements | Native |
 | Braavos | External library | Proof-based | Partial |
 | Cartridge | Controller + passkeys | WebAuthn | Custom |
-| Chipi Pay | On-chain validation | 4 elements | Forked AVNU |
+| Chipi Pay | On-chain validation | 4 elements | Via AVNU |
 
-This fragmentation creates concrete problems:
+Each of these approaches serves real use cases well. Argent's guardian model is battle-tested at consumer scale. Braavos' library approach keeps wallet contracts simple. Cartridge's passkey integration serves gaming. Bibliotheca DAO's Arcade Accounts pioneered the concept. This SNIP does not propose replacing any of them — it proposes a shared interface layer that enables interoperability.
 
-- **Paymaster incompatibility**: AVNU's upstream paymaster crashes for accounts without SRC-5 SNIP-9 registration and has no fallback for version detection. We proved this by building a forked paymaster with ABI-based fallback, U128 timestamp alignment, and graceful error handling — achieving universal compatibility with Chipi, Argent, Braavos, and any custom OZ account.
+This diversity creates coordination challenges:
+
+- **Paymaster integration complexity**: Integrating a custom session account with AVNU's paymaster revealed that implementation details matter: incorrect caller fields, SNIP-12 timestamp type mismatches (Felt vs U128), and missing SRC-5 interface registration caused signature validation failures — all on the account side. AVNU's paymaster works correctly with properly configured accounts. This experience demonstrates the value of a shared specification.
 - **dApp fragmentation**: Applications must build separate session integrations for each wallet.
-- **Audit duplication**: Each implementation requires its own security review. Nethermind audited our contract four times; Argent, Braavos, and Cartridge each have separate audit surfaces.
+- **Audit duplication**: Each implementation requires its own security review. Nethermind audited the reference implementation four times; Argent, Braavos, and Cartridge each have separate audit surfaces.
 
 **A standard enables**: any paymaster works with any session account, any dApp SDK works with any session wallet, and the community shares a single audited specification.
 
@@ -336,7 +338,7 @@ This SNIP does not mandate atomic multicall behavior. Implementations MAY use no
 
 ### U128 Timestamps for TypedData
 
-The hash format (Part F.4) uses `u128` for timestamp fields, matching OpenZeppelin's `SRC9Component` and current ecosystem practice (AVNU paymaster, Argent, Braavos). Using `felt252` for timestamps produces a different struct type hash, which produces a different message hash, which breaks signature validation against standard accounts. This was proven empirically: the reference implementation's early paymaster fork used `felt` timestamps and failed against all non-Chipi accounts until switched to `u128`.
+The hash format (Part F.4) uses `u128` for timestamp fields, matching OpenZeppelin's `SRC9Component` and current ecosystem practice (AVNU paymaster, Argent, Braavos). Using `felt252` for timestamps produces a different struct type hash, which produces a different message hash, which breaks signature validation against standard accounts. This was proven empirically: the reference implementation's account contract initially used `felt` timestamps for SNIP-12 hashing, producing a different struct type hash than the ecosystem standard (`u128`). Switching to `u128` resolved the mismatch.
 
 ### `__execute__` in the Blocklist
 
@@ -345,6 +347,17 @@ Blocking `__execute__` for session keys prevents nested execution privilege esca
 ### Call Consumption After Validation
 
 Incrementing `calls_used` after signature verification (not before) prevents an off-by-one error: a session with `max_calls = 1` would otherwise fail on its first (and only) valid use because the counter would already be at 1 when the limit check runs. This was identified as a Low severity finding in Nethermind's February 2026 audit.
+
+### AI Agent Delegation
+
+Session keys are a natural fit for autonomous AI agents that need restricted on-chain access. An AI trading bot, yield optimizer, or gaming agent requires:
+- Time-bounded sessions (prevent permanent access)
+- Function-scoped permissions (agent can only call whitelisted selectors)
+- Call limits (prevent runaway execution loops)
+- Immediate revocability (emergency kill switch)
+- Non-custodial delegation (agent never holds the owner key)
+
+This maps directly to the `SessionData` structure defined in Part A. A standard session key interface enables any compliant agent framework to work with any compliant wallet — without custom integration per wallet vendor.
 
 ## Security Considerations
 
@@ -427,7 +440,7 @@ Future extensions to this SNIP MAY add optional calldata constraints (e.g., maxi
 ## Reference Implementation
 
 - **Session account contract**: [github.com/chipi-pay/sessions-smart-contract](https://github.com/chipi-pay/sessions-smart-contract)
-- **Modified paymaster**: [github.com/chipi-pay](https://github.com/chipi-pay) `openzep` branch (forked from [github.com/avnu-labs/paymaster](https://github.com/avnu-labs/paymaster)) — U128 timestamps, ABI fallback, universal compatibility. Proposed upstream: [avnu-labs/paymaster#62](https://github.com/avnu-labs/paymaster/pull/62)
+- **Paymaster integration**: Tested against [AVNU's open-source paymaster](https://github.com/avnu-labs/paymaster). A development fork (`openzep` branch) was used during debugging; root causes were identified on the account side (see Motivation). Upstream PR [avnu-labs/paymaster#62](https://github.com/avnu-labs/paymaster/pull/62) was closed after confirming AVNU's paymaster works correctly with properly configured accounts.
 - **Production class hash**: `0x35a2251aca25daba18a5d8950deffa8372a7d84774554e75283cb85552eebc9` (v32)
 - **Network**: Starknet Mainnet
 - **Tests**: 46 passing (21 session validation + 22 audit regression + 3 SNIP-9 compatibility)
@@ -498,6 +511,22 @@ function validate(calls, signature):
 
     return 0
 ```
+
+## Acknowledgments
+
+This proposal builds on prior work across the Starknet ecosystem:
+
+- **Bibliotheca DAO** — First session key implementation on Starknet (Arcade Accounts), pioneered by Chris Lexmond and Loaf, proving the concept before anyone else
+- **Argent Labs / Ready** — Guardian model for session delegation, SNIP-9 co-authorship
+- **Braavos** — Open-source session keys library, SNIP-9 co-authorship (delaaxe)
+- **Cartridge** — Passkey infrastructure and gaming session validation (Controller, Flippy Flop at 127 TPS)
+- **AVNU** — SNIP-29 paymaster standard, SNIP-9 co-authorship, open-source paymaster reference implementation
+- **OpenZeppelin** — Cairo Contracts component architecture (`AccountComponent`, `SRC5Component`, `SRC9Component`) that makes session key extensions possible
+- **Nethermind** — Four rigorous security audits that identified critical vulnerabilities and shaped the admin blocklist, self-call block, and validation ordering
+- **Starknet Foundation** — Ecosystem infrastructure, Propulsion Program, and the vision that blockchain UX should be invisible
+- **EthSign** — Forum proposal for function call delegation (October 2024)
+
+The fragmentation that motivates this standard is not a failure — it is the natural result of teams independently solving the same problem well. This SNIP aims to provide a coordination layer, not to replace any existing approach.
 
 ## Copyright
 
