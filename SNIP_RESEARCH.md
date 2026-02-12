@@ -631,7 +631,7 @@ The foundation of everything. `AccountComponent`, `SRC5Component`, `SRC9Componen
 
 ### Starknet Foundation
 
-Thank you for creating the ecosystem where native account abstraction thrives. Through grants, the Propulsion Program, and the vision that blockchain UX should be invisible, you made it possible for builders like us to push boundaries. The Propulsion Program alone is funding 20+ gaming projects (up to $1M each), most of which will need session key functionality — standardization directly serves this cohort. The Foundation's grant infrastructure enabled this work to be built, audited, and proposed as a standard. The fact that session keys are even possible — natively, without L1 workarounds — is a testament to Starknet's architecture and the Foundation's commitment to advancing it.
+Chipi Pay is a seed grantee. The Foundation funded this work from day one, provided guidance throughout the process, and gave us the runway to build, audit, and propose a standard. The Propulsion Program is funding 20+ gaming projects (up to $1M each), most of which will need session key functionality. Session keys exist on Starknet because native account abstraction exists on Starknet, and that architecture is a direct result of the Foundation's investment in the ecosystem.
 
 ### Nethermind
 
@@ -648,6 +648,10 @@ Julien Niset (Argent), delaaxe (Braavos), and AVNU — for designing the outside
 ### Bibliotheca DAO
 
 For building the first session key implementation (Arcade Accounts) and proving the concept before anyone else. Chris Lexmond and Loaf showed the ecosystem what was possible.
+
+### Medialane
+
+Tested every class hash from v25 through v33 on mainnet and provided consistent feedback on integration issues throughout the development cycle.
 
 ### keep-starknet-strange / Omar Espejel
 

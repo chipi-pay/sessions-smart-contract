@@ -612,7 +612,8 @@ This proposal builds on prior work across the Starknet ecosystem:
 - **AVNU** — SNIP-29 paymaster standard, SNIP-9 co-authorship, open-source paymaster reference implementation
 - **OpenZeppelin** — Cairo Contracts component architecture (`AccountComponent`, `SRC5Component`, `SRC9Component`) that makes session key extensions possible
 - **Nethermind** — Four AuditAgent scans that identified critical vulnerabilities and shaped the admin blocklist, self-call block, and validation ordering. A human-led audit is a logical next step as the standard matures.
-- **Starknet Foundation** — Ecosystem infrastructure, Propulsion Program, and the vision that blockchain UX should be invisible
+- **Medialane** — Tested every class hash from v25 through v33 on mainnet and provided consistent feedback on integration issues
+- **Starknet Foundation** — Seed grant that funded development from day one, and ongoing guidance throughout the process. This work would not exist without their support.
 - **EthSign** — Forum proposal for function call delegation (October 2024)
 - **keep-starknet-strange / Omar Espejel** — Proposed `ISessionSpendingPolicy` ([Issue #5](https://github.com/chipi-pay/sessions-smart-contract/issues/5)), collaborated on spending policy design informed by starknet-agentic's working implementation
 
