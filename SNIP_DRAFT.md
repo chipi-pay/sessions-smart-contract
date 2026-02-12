@@ -2,7 +2,7 @@
 snip: TBD
 title: Session Keys for Smart Accounts
 description: Standard interface for session key management and paymaster interaction on Starknet smart accounts.
-author: Chipi Pay <https://github.com/chipi-pay>
+author: Chipi Pay <https://github.com/chipi-pay>, Omar Espejel (@omarespejel) <https://github.com/omarespejel>
 discussions-to: TBD <!-- Must point to a community.starknet.io/c/development-proposals/snip topic -->
 status: Draft
 type: Standards Track

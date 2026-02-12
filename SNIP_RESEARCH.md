@@ -1,6 +1,6 @@
 # Session Keys on Starknet: An Ecosystem Position Paper
 
-**Authors**: Chipi Pay
+**Authors**: Chipi Pay, Omar Espejel (@omarespejel)
 **Date**: February 6, 2026
 **Repository**: [github.com/chipi-pay/sessions-smart-contract](https://github.com/chipi-pay/sessions-smart-contract)
 
