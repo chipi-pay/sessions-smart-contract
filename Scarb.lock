@@ -2,134 +2,64 @@
 version = 1
 
 [[package]]
-name = "avnu_lib"
-version = "0.1.0"
-source = "git+https://github.com/avnu-labs/avnu-contracts-lib?tag=v0.1.0#d9c44c62ce037e4c11440b1e07828d9075e490e2"
-
-[[package]]
-name = "openzeppelin"
-version = "2.0.0"
-source = "git+https://github.com/OpenZeppelin/cairo-contracts.git?tag=v2.0.0#f1c15a30a44311166e0368081c5f79ab5a02c1d3"
-dependencies = [
- "openzeppelin_access",
- "openzeppelin_account",
- "openzeppelin_finance",
- "openzeppelin_governance",
- "openzeppelin_introspection",
- "openzeppelin_merkle_tree",
- "openzeppelin_presets",
- "openzeppelin_security",
- "openzeppelin_token",
- "openzeppelin_upgrades",
- "openzeppelin_utils",
-]
-
-[[package]]
-name = "openzeppelin_access"
-version = "2.0.0"
-source = "git+https://github.com/OpenZeppelin/cairo-contracts.git?tag=v2.0.0#f1c15a30a44311166e0368081c5f79ab5a02c1d3"
-dependencies = [
- "openzeppelin_introspection",
-]
-
-[[package]]
 name = "openzeppelin_account"
-version = "2.0.0"
-source = "git+https://github.com/OpenZeppelin/cairo-contracts.git?tag=v2.0.0#f1c15a30a44311166e0368081c5f79ab5a02c1d3"
+version = "3.0.0"
+source = "git+https://github.com/OpenZeppelin/cairo-contracts.git?tag=v3.0.0#ddd3338e787a3fbf4a92b366640a57ee364390cb"
 dependencies = [
+ "openzeppelin_interfaces",
  "openzeppelin_introspection",
  "openzeppelin_utils",
 ]
 
 [[package]]
-name = "openzeppelin_finance"
-version = "2.0.0"
-source = "git+https://github.com/OpenZeppelin/cairo-contracts.git?tag=v2.0.0#f1c15a30a44311166e0368081c5f79ab5a02c1d3"
-dependencies = [
- "openzeppelin_access",
- "openzeppelin_token",
-]
-
-[[package]]
-name = "openzeppelin_governance"
-version = "2.0.0"
-source = "git+https://github.com/OpenZeppelin/cairo-contracts.git?tag=v2.0.0#f1c15a30a44311166e0368081c5f79ab5a02c1d3"
-dependencies = [
- "openzeppelin_access",
- "openzeppelin_account",
- "openzeppelin_introspection",
- "openzeppelin_token",
- "openzeppelin_utils",
-]
+name = "openzeppelin_interfaces"
+version = "2.1.0"
+source = "git+https://github.com/OpenZeppelin/cairo-contracts.git?tag=v3.0.0#ddd3338e787a3fbf4a92b366640a57ee364390cb"
 
 [[package]]
 name = "openzeppelin_introspection"
-version = "2.0.0"
-source = "git+https://github.com/OpenZeppelin/cairo-contracts.git?tag=v2.0.0#f1c15a30a44311166e0368081c5f79ab5a02c1d3"
-
-[[package]]
-name = "openzeppelin_merkle_tree"
-version = "2.0.0"
-source = "git+https://github.com/OpenZeppelin/cairo-contracts.git?tag=v2.0.0#f1c15a30a44311166e0368081c5f79ab5a02c1d3"
-
-[[package]]
-name = "openzeppelin_presets"
-version = "2.0.0"
-source = "git+https://github.com/OpenZeppelin/cairo-contracts.git?tag=v2.0.0#f1c15a30a44311166e0368081c5f79ab5a02c1d3"
+version = "3.0.0"
+source = "git+https://github.com/OpenZeppelin/cairo-contracts.git?tag=v3.0.0#ddd3338e787a3fbf4a92b366640a57ee364390cb"
 dependencies = [
- "openzeppelin_access",
- "openzeppelin_account",
- "openzeppelin_finance",
- "openzeppelin_introspection",
- "openzeppelin_token",
- "openzeppelin_upgrades",
- "openzeppelin_utils",
-]
-
-[[package]]
-name = "openzeppelin_security"
-version = "2.0.0"
-source = "git+https://github.com/OpenZeppelin/cairo-contracts.git?tag=v2.0.0#f1c15a30a44311166e0368081c5f79ab5a02c1d3"
-
-[[package]]
-name = "openzeppelin_token"
-version = "2.0.0"
-source = "git+https://github.com/OpenZeppelin/cairo-contracts.git?tag=v2.0.0#f1c15a30a44311166e0368081c5f79ab5a02c1d3"
-dependencies = [
- "openzeppelin_access",
- "openzeppelin_account",
- "openzeppelin_introspection",
- "openzeppelin_utils",
+ "openzeppelin_interfaces",
 ]
 
 [[package]]
 name = "openzeppelin_upgrades"
-version = "2.0.0"
-source = "git+https://github.com/OpenZeppelin/cairo-contracts.git?tag=v2.0.0#f1c15a30a44311166e0368081c5f79ab5a02c1d3"
+version = "3.0.0"
+source = "git+https://github.com/OpenZeppelin/cairo-contracts.git?tag=v3.0.0#ddd3338e787a3fbf4a92b366640a57ee364390cb"
 
 [[package]]
 name = "openzeppelin_utils"
-version = "2.0.0"
-source = "git+https://github.com/OpenZeppelin/cairo-contracts.git?tag=v2.0.0#f1c15a30a44311166e0368081c5f79ab5a02c1d3"
+version = "2.1.0"
+source = "git+https://github.com/OpenZeppelin/cairo-contracts.git?tag=v3.0.0#ddd3338e787a3fbf4a92b366640a57ee364390cb"
+dependencies = [
+ "openzeppelin_interfaces",
+]
 
 [[package]]
 name = "sessions_smart_contract"
 version = "1.0.0"
 dependencies = [
- "avnu_lib",
- "openzeppelin",
- "snforge_std_deprecated",
+ "openzeppelin_account",
+ "openzeppelin_interfaces",
+ "openzeppelin_introspection",
+ "openzeppelin_upgrades",
+ "openzeppelin_utils",
+ "snforge_std",
 ]
 
 [[package]]
-name = "snforge_scarb_plugin_deprecated"
-version = "0.50.0"
-source = "git+https://github.com/foundry-rs/starknet-foundry.git?tag=v0.50.0#bf0ade0de89c51c80dcc376b7c0a6d3e7aded962"
+name = "snforge_scarb_plugin"
+version = "0.54.1"
+source = "registry+https://scarbs.xyz/"
+checksum = "sha256:5c754ba8c262633e60c2cd06710cb96604c8bf20595fe60965013fedd8a55df9"
 
 [[package]]
-name = "snforge_std_deprecated"
-version = "0.50.0"
-source = "git+https://github.com/foundry-rs/starknet-foundry.git?tag=v0.50.0#bf0ade0de89c51c80dcc376b7c0a6d3e7aded962"
+name = "snforge_std"
+version = "0.54.1"
+source = "registry+https://scarbs.xyz/"
+checksum = "sha256:e0532e6149ffc580e282d0774404e512a6814d477cd65529b91d5a09ac6e07d6"
 dependencies = [
- "snforge_scarb_plugin_deprecated",
+ "snforge_scarb_plugin",
 ]

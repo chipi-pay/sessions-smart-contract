@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod test_snip9_compatibility {
     use starknet::ContractAddress;
-    use snforge_std_deprecated::{declare, ContractClassTrait, DeclareResultTrait};
+    use snforge_std::{declare, ContractClassTrait, DeclareResultTrait};
     use sessions_smart_contract::account::{
         SessionData, ISessionKeyManagerDispatcher, ISessionKeyManagerDispatcherTrait
     };
@@ -48,7 +48,7 @@ mod test_snip9_compatibility {
         let info = snip9_dispatcher.get_contract_info();
 
         // Should indicate current version
-        assert(info == 'v32', 'Wrong version string');
+        assert(info == 'v33', 'Wrong version string');
     }
 
     #[test]

@@ -40,6 +40,7 @@ Session keys are the most impactful UX improvement for on-chain applications. Th
 | Braavos | External library | Proof-based | Partial |
 | Cartridge | Controller + passkeys | WebAuthn | Custom |
 | Chipi Pay | On-chain validation | 4 elements | Via AVNU |
+| starknet-agentic | Agent account + spending policies | 3 elements | No |
 
 Each of these approaches serves real use cases well. Argent's guardian model is battle-tested at consumer scale. Braavos' library approach keeps wallet contracts simple. Cartridge's passkey integration serves gaming. Bibliotheca DAO's Arcade Accounts pioneered the concept. This SNIP does not propose replacing any of them — it proposes a shared interface layer that enables interoperability.
 
@@ -95,6 +96,25 @@ trait ISessionKeyManager<TContractState> {
     fn get_session_data(self: @TContractState, session_key: felt252) -> SessionData;
 }
 ```
+
+**Component architecture**: The reference implementation provides session key management as a reusable `SessionKeyComponent` that any account can embed — not just OpenZeppelin-based accounts. The embedding contract implements a `HasAccountOwner` trait with a single function:
+
+```cairo
+pub trait HasAccountOwner<TContractState> {
+    fn assert_only_self(self: @TContractState);
+}
+```
+
+This trait has **zero OpenZeppelin dependencies**. Any wallet framework (Argent, Braavos, Cartridge, or custom) can implement it by delegating to their own owner check. The `SpendingPolicyComponent` (Part H) is fully independent with its own storage and can be embedded alongside or separately.
+
+**Wallet integration pattern** (5 steps):
+1. Add `component!()` declaration for `SessionKeyComponent` (and optionally `SpendingPolicyComponent`)
+2. Implement `HasAccountOwner` — delegate `assert_only_self()` to your own owner check
+3. Call `session_key.is_session_allowed_for_calls()` in `__validate__`
+4. Call `session_key.consume_session_call()` after signature verification
+5. Optionally call `spending_policy.check_and_update_spending()` in `__execute__`
+
+This design makes session keys a **reusable building block** rather than a monolithic contract that other wallets must fork. The key differentiator is that session key functionality is embeddable by any wallet with minimal integration effort.
 
 **Storage layout**: Implementations SHOULD use two maps:
 - `session_keys: Map<felt252, SessionData>` — session public key to session data
@@ -173,7 +193,11 @@ selector!("__execute__")                // Prevents nested execution privilege e
 selector!("set_public_key")             // Prevents owner key rotation (OZ PublicKeyImpl)
 selector!("setPublicKey")               // Prevents owner key rotation (OZ PublicKeyCamelImpl)
 selector!("execute_from_outside_v2")    // Prevents nested SNIP-9 double-consumption
+selector!("set_spending_policy")        // Prevents session key from modifying spending limits
+selector!("remove_spending_policy")     // Prevents session key from removing spending limits
 ```
+
+**Rationale for `set_spending_policy`/`remove_spending_policy`**: If the Spending Policy Extension (Part H) is implemented, session keys MUST NOT be able to modify or remove their own spending limits. Without this blocklist entry, a session key could call `set_spending_policy` to raise its own caps or `remove_spending_policy` to eliminate them entirely, defeating the purpose of spending restrictions.
 
 **Rationale for `__execute__`**: A session key that can call `__execute__` directly can pass arbitrary nested calls. Since `__execute__` checks that the caller is `0` (sequencer) or `self` (the account), and the account calling its own `__execute__` satisfies this check, the nested calls would execute with full account privileges — bypassing all session restrictions. This was identified as a High severity finding by Nethermind's AuditAgent in February 2026.
 
@@ -181,7 +205,7 @@ selector!("execute_from_outside_v2")    // Prevents nested SNIP-9 double-consump
 
 **Rationale for `execute_from_outside_v2`**: Allowing session keys to call `execute_from_outside_v2` creates nested SNIP-9 execution, potentially causing double nonce consumption or double call-counter increments. Identified as a Low severity finding by Nethermind's AuditAgent (scan 3).
 
-Implementations MAY extend this blocklist with additional selectors but MUST NOT remove any of the seven listed above.
+Implementations MAY extend this blocklist with additional selectors but MUST NOT remove any of the nine listed above.
 
 **Self-call block (RECOMMENDED)**: In addition to the blocklist, implementations SHOULD block ALL calls where `call.to == get_contract_address()` when `allowed_entrypoints_len == 0` (empty whitelist). This eliminates the entire class of privilege escalation via self-calls, protecting against any future OZ embedded impl or upgrade exposing new privileged selectors. The denylist approach is inherently fragile — each of three Nethermind AuditAgent scans found selectors not in the blocklist. The self-call block converts this from an open-ended problem to a closed one.
 
@@ -323,6 +347,61 @@ interface_id = starknetKeccak("add_or_update_session_key")
 
 This enables paymasters and dApps to detect session key support via `supports_interface()` without needing to know the specific account implementation or class hash.
 
+### Part H: Spending Policy Extension (OPTIONAL)
+
+Implementations MAY support per-token spending limits for session keys via the `ISessionSpendingPolicy` interface. This extension adds per-call and rolling-window cumulative caps on ERC-20 operations performed by session keys.
+
+```cairo
+#[derive(Drop, Copy, Serde, starknet::Store)]
+struct SpendingPolicy {
+    max_per_call: u256,       // Maximum amount per individual call
+    max_per_window: u256,     // Maximum cumulative amount per time window
+    window_seconds: u64,      // Duration of the rolling window (e.g. 86400 for 24h)
+    spent_in_window: u256,    // Amount spent in current window
+    window_start: u64,        // Timestamp when current window started
+}
+
+#[starknet::interface]
+trait ISessionSpendingPolicy<TContractState> {
+    fn set_spending_policy(
+        ref self: TContractState,
+        session_key: felt252,
+        token: ContractAddress,
+        max_per_call: u256,
+        max_per_window: u256,
+        window_seconds: u64,
+    );
+    fn get_spending_policy(
+        self: @TContractState,
+        session_key: felt252,
+        token: ContractAddress,
+    ) -> SpendingPolicy;
+    fn remove_spending_policy(
+        ref self: TContractState,
+        session_key: felt252,
+        token: ContractAddress,
+    );
+}
+```
+
+**Tracked selectors**: Implementations SHOULD track the following ERC-20 selectors as spending operations:
+- `transfer` — direct token transfer
+- `approve` — token approval
+- `increase_allowance` / `increaseAllowance` — allowance increase (snake_case and camelCase)
+
+**Enforcement**: Spending checks MUST occur in `__execute__` (not `__validate__`), because spending state mutations in `__validate__` would be reverted on execution failure. For each call with a tracked selector:
+1. Extract `u256` amount from calldata positions `[1]` (low) and `[2]` (high)
+2. Check `amount <= policy.max_per_call`
+3. Auto-reset window if `now >= window_start + window_seconds`
+4. Check `spent_in_window + amount <= policy.max_per_window`
+5. Update `spent_in_window`
+
+If no policy is set for a (session_key, token) pair (i.e., `max_per_window == 0`), the call is unrestricted.
+
+**Admin blocklist requirement**: Implementations that support this extension MUST include `set_spending_policy` and `remove_spending_policy` in the admin selector blocklist (Part D). Without this, a session key could modify or remove its own spending limits, defeating the purpose of the restriction.
+
+**Rationale**: This extension was proposed by keep-starknet-strange / Omar Espejel ([Issue #5](https://github.com/chipi-pay/sessions-smart-contract/issues/5)) and informed by starknet-agentic's working implementation. Spending limits are critical for DeFi automation and AI agent use cases where session keys need per-token caps beyond selector-level restrictions.
+
 ## Rationale
 
 ### On-chain vs Hybrid Enforcement
@@ -438,7 +517,7 @@ This SNIP restricts which selectors a session key can call, but does NOT restric
 - **Composability**: Different contracts encode calldata differently. A generic calldata restriction mechanism would need to understand each target contract's ABI.
 - **Practical mitigation**: Applications that need calldata-level control can use dedicated wrapper contracts that enforce amount limits or recipient whitelists, then whitelist only those wrapper contracts in the session.
 
-Future extensions to this SNIP MAY add optional calldata constraints (e.g., maximum transfer amounts) as a separate module.
+The `ISessionSpendingPolicy` extension (Part H) provides optional per-token spending limits as a separate module, addressing the most common calldata restriction need (ERC-20 amount caps) without requiring a generic calldata parsing mechanism.
 
 ### Replay Protection
 
@@ -449,12 +528,13 @@ Future extensions to this SNIP MAY add optional calldata constraints (e.g., maxi
 ## Reference Implementation
 
 - **Session account contract**: [github.com/chipi-pay/sessions-smart-contract](https://github.com/chipi-pay/sessions-smart-contract)
+- **Architecture**: Reusable `SessionKeyComponent` and optional `SpendingPolicyComponent` that any OZ-based account can embed via the `HasAccountOwner` trait pattern
 - **Paymaster integration**: Tested against [AVNU's open-source paymaster](https://github.com/avnu-labs/paymaster). A development fork (`openzep` branch) was used during debugging; root causes were identified on the account side (see Motivation). Upstream PR [avnu-labs/paymaster#62](https://github.com/avnu-labs/paymaster/pull/62) was closed after confirming AVNU's paymaster works correctly with properly configured accounts.
-- **Production class hash**: `0x35a2251aca25daba18a5d8950deffa8372a7d84774554e75283cb85552eebc9` (v32)
+- **Production class hash**: `0x0484bbd2404b3c7264bea271f7267d6d4004821ac7787a9eed7f472e79ef40d1` (v33)
 - **Network**: Starknet Mainnet
-- **Tests**: 46 passing (21 session validation + 22 audit regression + 3 SNIP-9 compatibility)
+- **Tests**: 65 passing (21 session validation + 22 audit regression + 3 SNIP-9 compatibility + 19 spending policy)
 - **Auditor**: Nethermind AuditAgent (AI-powered, January 2026, February 2026 — 4 scans, final: 0 findings)
-- **Dependencies**: OpenZeppelin Cairo Contracts v2.0.0, AVNU Contracts Lib v0.1.0, Starknet >= 2.8.0
+- **Dependencies**: OpenZeppelin Cairo Contracts v3.0.0, Starknet 2.14.0
 
 ### Reference Interface Definitions
 
@@ -534,6 +614,7 @@ This proposal builds on prior work across the Starknet ecosystem:
 - **Nethermind** — Four AuditAgent scans that identified critical vulnerabilities and shaped the admin blocklist, self-call block, and validation ordering. A human-led audit is a logical next step as the standard matures.
 - **Starknet Foundation** — Ecosystem infrastructure, Propulsion Program, and the vision that blockchain UX should be invisible
 - **EthSign** — Forum proposal for function call delegation (October 2024)
+- **keep-starknet-strange / Omar Espejel** — Proposed `ISessionSpendingPolicy` ([Issue #5](https://github.com/chipi-pay/sessions-smart-contract/issues/5)), collaborated on spending policy design informed by starknet-agentic's working implementation
 
 The fragmentation that motivates this standard is not a failure — it is the natural result of teams independently solving the same problem well. This SNIP aims to provide a coordination layer, not to replace any existing approach.
 

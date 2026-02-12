@@ -32,13 +32,13 @@ A production-ready Cairo smart contract that combines **session keys** with **SN
 
 | Field | Value |
 |-------|-------|
-| **Class Hash** | `0x35a2251aca25daba18a5d8950deffa8372a7d84774554e75283cb85552eebc9` |
+| **Class Hash** | `0x0484bbd2404b3c7264bea271f7267d6d4004821ac7787a9eed7f472e79ef40d1` |
 | **Contract Address** | `0x03062f8ec52749beae94daee793871e60a4f71fdee577e9d9fb0c61260024806` |
 | **Network** | Starknet Mainnet |
-| **Version** | v32 (Audit 1 + 2 + 3 + 4 Compliant) |
+| **Version** | v33 (Audit 1 + 2 + 3 + 4 Compliant + Spending Policy) |
 | **Status** | Live on Mainnet |
 | **Audit** | Nethermind AuditAgent — January & February 2026 (4 scans, final: 0 findings) |
-| **Voyager** | [View Contract Class](https://voyager.online/class/0x035a2251aca25daba18a5d8950deffa8372a7d84774554e75283cb85552eebc9) |
+| **Voyager** | [View Contract Class](https://voyager.online/class/0x0484bbd2404b3c7264bea271f7267d6d4004821ac7787a9eed7f472e79ef40d1) |
 
 ---
 
@@ -264,7 +264,7 @@ await paymaster.executeFromOutside(accountAddress, outsideExecution, signature);
 1. Check session exists (valid_until > 0)
 2. Check not expired (block_timestamp ≤ valid_until)
 3. Check calls remaining (calls_used < max_calls)
-4. Block admin selectors (upgrade, add/revoke session, `__execute__`, set_public_key, setPublicKey, execute_from_outside_v2)
+4. Block admin selectors (upgrade, add/revoke session, `__execute__`, set_public_key, setPublicKey, execute_from_outside_v2, set_spending_policy, remove_spending_policy)
 5. Block self-calls for empty whitelist (call.to == account)
 6. Check selector allowed (if explicit whitelist exists)
 6. Verify ECDSA signature
@@ -281,7 +281,7 @@ Transaction authorized
 | **No Cross-Chain Replay** | Chain ID included in message hash |
 | **No Account Confusion** | Account address included in message hash |
 | **No Privilege Escalation** | Sessions can only call whitelisted functions |
-| **No Admin Access** | Sessions blocked from upgrade/add/revoke/set_public_key/setPublicKey selectors regardless of whitelist |
+| **No Admin Access** | Sessions blocked from 9 admin selectors (upgrade, add/revoke session, set_public_key, setPublicKey, set_spending_policy, remove_spending_policy) regardless of whitelist |
 | **No Nested Execution** | Sessions blocked from calling `__execute__` and `execute_from_outside_v2` directly |
 | **No Self-Call Escalation** | Sessions with empty whitelist cannot target the account contract at all (eliminates entire privilege escalation class) |
 | **No Indefinite Access** | Sessions have mandatory expiration |
@@ -307,75 +307,102 @@ Session signatures bind `calls`, `calldata`, `nonce`, `chain_id`, and `expiratio
 - **NatSpec documentation** — Comprehensive doc comments on all public and security-critical functions
 - Dead code removed, debug events removed, essential events only
 
+### Production Hardening (v33)
+
+- **SpendingPolicyComponent** — Per-token spending limits with per-call and rolling-window caps, proposed by @OmarEspejel / keep-starknet-strange in [Issue #5](https://github.com/chipi-pay/sessions-smart-contract/issues/5), informed by starknet-agentic's implementation
+- **SessionKeyComponent extraction** — Reusable component ANY wallet can embed (not just OZ accounts) via a single `HasAccountOwner` trait
+- **9-selector admin blocklist** — Expanded from 7 to 9 with `set_spending_policy` and `remove_spending_policy`
+- **OZ v3.0.0 migration** — Starknet 2.14.0, snforge_std 0.54.1
+- **65 Cairo tests** — 19 new spending policy tests
+- **28/28 mainnet integration tests** — Including 7 new spending policy tests
+
 ---
 
 ## 🧪 Comprehensive Test Suite
 
-### Test Results: 46/46 Passing
+### Test Results: 65/65 Passing
 
 ```bash
 $ snforge test
 
-Collected 46 test(s) from sessions_smart_contract package
-Running 46 test(s) from tests/
+Collected 65 test(s) from sessions_smart_contract package
+Running 0 test(s) from src/
+Running 65 test(s) from tests/
 
-# Session Validation Tests (15)
-[PASS] test_owner_signature_valid
-[PASS] test_session_signature_valid
-[PASS] test_session_expired
-[PASS] test_session_max_calls
-[PASS] test_session_not_allowed_selector
-[PASS] test_session_invalid_signature
-[PASS] test_session_revoke
-[PASS] test_session_with_no_restrictions
-[PASS] test_session_multiple_calls_in_transaction
-[PASS] test_add_session_unauthorized
-[PASS] test_revoke_session_unauthorized
-[PASS] test_session_events_emitted
-[PASS] test_upgrade_still_owner_only
-[PASS] test_invalid_signature_length_3_elements
-[PASS] test_empty_signature_fails
+# Session Validation (21)
+[PASS] test_session_validation::test_owner_signature_valid
+[PASS] test_session_validation::test_session_signature_valid
+[PASS] test_session_validation::test_session_expired
+[PASS] test_session_validation::test_session_max_calls
+[PASS] test_session_validation::test_session_not_allowed_selector
+[PASS] test_session_validation::test_session_invalid_signature
+[PASS] test_session_validation::test_session_revoke
+[PASS] test_session_validation::test_session_with_no_restrictions
+[PASS] test_session_validation::test_session_multiple_calls_in_transaction
+[PASS] test_session_validation::test_add_session_unauthorized
+[PASS] test_session_validation::test_revoke_session_unauthorized
+[PASS] test_session_validation::test_session_events_emitted
+[PASS] test_session_validation::test_upgrade_still_owner_only
+[PASS] test_session_validation::test_invalid_signature_length_3_elements
+[PASS] test_session_validation::test_empty_signature_fails
+[PASS] test_session_validation::test_session_max_calls_zero_immediately_exhausted
+[PASS] test_session_validation::test_double_revoke_same_session
+[PASS] test_session_validation::test_update_session_resets_calls_used
+[PASS] test_session_validation::test_multiple_concurrent_sessions_independent
+[PASS] test_session_validation::test_signature_length_5_returns_zero
+[PASS] test_session_validation::test_session_valid_at_exact_expiration_boundary
 
-# Session Validation Edge Cases (6)
-[PASS] test_session_max_calls_zero_immediately_exhausted
-[PASS] test_double_revoke_same_session
-[PASS] test_update_session_resets_calls_used
-[PASS] test_multiple_concurrent_sessions_independent
-[PASS] test_signature_length_5_returns_zero
-[PASS] test_session_valid_at_exact_expiration_boundary
+# Audit Fix Regressions (22)
+[PASS] test_audit_fixes::test_audit1_execute_rejects_unauthorized_caller
+[PASS] test_audit_fixes::test_audit1_execute_allows_self_caller
+[PASS] test_audit_fixes::test_audit2_validate_blocks_disallowed_selector
+[PASS] test_audit_fixes::test_audit3_session_blocked_from_upgrade
+[PASS] test_audit_fixes::test_audit3_session_blocked_from_add_session
+[PASS] test_audit_fixes::test_audit5_is_valid_signature_session_expired_returns_zero
+[PASS] test_audit_fixes::test_audit6_is_valid_signature_does_not_consume_calls
+[PASS] test_audit_fixes::test_audit7_execute_continues_after_failed_subcall
+[PASS] test_audit_fixes::test_audit8_session_blocked_from_revoke
+[PASS] test_audit_fixes::test_audit9_overflow_valid_until_returns_zero
+[PASS] test_audit_fixes::test_audit9_is_valid_signature_overflow_returns_zero
+[PASS] test_audit_fixes::test_audit10_update_session_clears_old_entrypoints
+[PASS] test_audit_fixes::test_audit_new_session_blocked_from_execute
+[PASS] test_audit_fixes::test_audit_new_execute_from_outside_invalid_signature_reverts
+[PASS] test_audit_fixes::test_audit3_session_blocked_from_set_public_key
+[PASS] test_audit_fixes::test_audit3_session_blocked_from_setPublicKey
+[PASS] test_audit_fixes::test_audit3_session_blocked_from_execute_from_outside_v2
+[PASS] test_audit_fixes::test_audit3_session_blocked_self_call_generic
+[PASS] test_audit_fixes::test_audit3_session_allows_external_call_with_empty_whitelist
+[PASS] test_audit_fixes::test_audit3_session_explicit_whitelist_allows_external
+[PASS] test_audit_fixes::test_audit3_src5_supports_session_interface
+[PASS] test_audit_fixes::test_audit3_src5_supports_unknown_returns_false
 
-# Audit 1+2 Fix Regression Tests (14)
-[PASS] test_audit1_execute_rejects_unauthorized_caller
-[PASS] test_audit1_execute_allows_self_caller
-[PASS] test_audit2_validate_blocks_disallowed_selector
-[PASS] test_audit3_session_blocked_from_upgrade
-[PASS] test_audit3_session_blocked_from_add_session
-[PASS] test_audit5_is_valid_signature_session_expired_returns_zero
-[PASS] test_audit6_is_valid_signature_does_not_consume_calls
-[PASS] test_audit7_execute_continues_after_failed_subcall
-[PASS] test_audit8_session_blocked_from_revoke
-[PASS] test_audit9_overflow_valid_until_returns_zero
-[PASS] test_audit9_is_valid_signature_overflow_returns_zero
-[PASS] test_audit10_update_session_clears_old_entrypoints
-[PASS] test_audit_new_session_blocked_from_execute
-[PASS] test_audit_new_execute_from_outside_invalid_signature_reverts
+# SNIP-9 Compatibility (3)
+[PASS] test_snip9_compatibility::test_snip9_version_returns_v2
+[PASS] test_snip9_compatibility::test_contract_info_shows_snip9_compatible
+[PASS] test_snip9_compatibility::test_session_keys_still_work_with_snip9
 
-# Audit 3 Fix Regression Tests (8)
-[PASS] test_audit3_session_blocked_from_set_public_key
-[PASS] test_audit3_session_blocked_from_setPublicKey
-[PASS] test_audit3_session_blocked_from_execute_from_outside_v2
-[PASS] test_audit3_session_blocked_self_call_generic
-[PASS] test_audit3_session_allows_external_call_with_empty_whitelist
-[PASS] test_audit3_session_explicit_whitelist_allows_external
-[PASS] test_audit3_src5_supports_session_interface
-[PASS] test_audit3_src5_supports_unknown_returns_false
+# Spending Policy (19)
+[PASS] test_spending_policy::test_spending_policy_set_and_get
+[PASS] test_spending_policy::test_spending_policy_unauthorized_set
+[PASS] test_spending_policy::test_spending_policy_remove
+[PASS] test_spending_policy::test_spending_policy_remove_unauthorized
+[PASS] test_spending_policy::test_spending_policy_multiple_tokens
+[PASS] test_spending_policy::test_spending_policy_no_policy_allows_all
+[PASS] test_spending_policy::test_enforcement_exceeds_per_call
+[PASS] test_spending_policy::test_enforcement_exceeds_window
+[PASS] test_spending_policy::test_enforcement_within_limits
+[PASS] test_spending_policy::test_enforcement_exactly_at_limit
+[PASS] test_spending_policy::test_enforcement_window_auto_reset
+[PASS] test_spending_policy::test_enforcement_no_policy_unrestricted
+[PASS] test_spending_policy::test_enforcement_non_spending_selector
+[PASS] test_spending_policy::test_enforcement_multicall_cumulative
+[PASS] test_spending_policy::test_enforcement_multicall_exceeds_window
+[PASS] test_spending_policy::test_enforcement_approve_tracked
+[PASS] test_spending_policy::test_spending_enforcement_invalid_amount_calldata
+[PASS] test_spending_policy::test_blocklist_rejects_set_spending_policy
+[PASS] test_spending_policy::test_blocklist_rejects_remove_spending_policy
 
-# SNIP-9 Compatibility Tests (3)
-[PASS] test_snip9_version_returns_v2
-[PASS] test_contract_info_shows_snip9_compatible
-[PASS] test_session_keys_still_work_with_snip9
-
-Tests: 46 passed, 0 failed, 0 ignored, 0 filtered out
+Tests: 65 passed, 0 failed, 0 ignored, 0 filtered out
 ```
 
 ### Test Categories
@@ -383,9 +410,9 @@ Tests: 46 passed, 0 failed, 0 ignored, 0 filtered out
 | Category | Tests | What It Covers |
 |----------|-------|----------------|
 | **Session Validation** | 21 | Add, revoke, expiry, limits, selectors, signatures, events, edge cases |
-| **Audit 1+2 Fix Regressions** | 14 | `__execute__` caller check, admin blocklist, `__execute__` nested bypass, whitelist enforcement, `is_valid_signature` read-only, non-atomic multicall, safe `try_into()`, stale entrypoint cleanup, SNIP-9 call ordering |
-| **Audit 3 Fix Regressions** | 8 | `set_public_key`/`setPublicKey` blocklist, `execute_from_outside_v2` blocklist, self-call block, external call allowance, explicit whitelist, SRC-5 interface registration |
+| **Audit Fix Regressions** | 22 | `__execute__` caller check, admin blocklist, `__execute__` nested bypass, whitelist enforcement, `is_valid_signature` read-only, non-atomic multicall, safe `try_into()`, stale entrypoint cleanup, SNIP-9 call ordering, `set_public_key`/`setPublicKey` blocklist, `execute_from_outside_v2` blocklist, self-call block, SRC-5 interface registration |
 | **SNIP-9 Compatibility** | 3 | Version checks, interface detection, session+SNIP-9 integration |
+| **Spending Policy** | 19 | Set/get/remove policies, auth checks, multi-token, per-call limits, window cumulative limits, window reset, ERC-20 selector tracking (transfer, approve, increase_allowance), admin blocklist enforcement, per-session independence |
 
 ---
 
@@ -557,7 +584,7 @@ sncast declare --contract-name Account --network mainnet
 
 # Deploy with your public key
 sncast deploy \
-  --class-hash 0x35a2251aca25daba18a5d8950deffa8372a7d84774554e75283cb85552eebc9 \
+  --class-hash 0x0484bbd2404b3c7264bea271f7267d6d4004821ac7787a9eed7f472e79ef40d1 \
   --constructor-calldata YOUR_PUBLIC_KEY \
   --network mainnet
 ```
@@ -609,6 +636,68 @@ fn get_outside_execution_message_hash_rev_1(
 | **Owner** | `[r, s]` | Full account control |
 | **Session** | `[session_pubkey, r, s, valid_until]` | Delegated access |
 
+### Spending Policy Management
+
+```cairo
+// Set a per-token spending policy for a session key (owner only)
+fn set_spending_policy(
+    ref self: TContractState,
+    session_key: felt252,
+    token: ContractAddress,
+    max_per_call: u256,
+    max_per_window: u256,
+    window_seconds: u64,
+);
+
+// Query the spending policy for a session key + token pair
+fn get_spending_policy(
+    self: @TContractState,
+    session_key: felt252,
+    token: ContractAddress,
+) -> SpendingPolicy;
+
+// Remove a spending policy (owner only)
+fn remove_spending_policy(
+    ref self: TContractState,
+    session_key: felt252,
+    token: ContractAddress,
+);
+```
+
+---
+
+## 🧩 Component Architecture
+
+The session key logic is extracted into reusable components that **any wallet** can embed — not just OpenZeppelin-based accounts.
+
+### SessionKeyComponent
+
+`SessionKeyComponent` requires only a single-function `HasAccountOwner` trait:
+
+```cairo
+pub trait HasAccountOwner<TContractState> {
+    fn assert_only_self(self: @TContractState);
+}
+```
+
+This trait has **zero OpenZeppelin dependencies**. Any wallet framework (Argent, Braavos, Cartridge, or custom) can implement it by delegating to their own owner check.
+
+### SpendingPolicyComponent
+
+`SpendingPolicyComponent` is fully independent with its own storage. It tracks ERC-20 spending (transfer, approve, increase_allowance) with per-call and rolling-window cumulative caps.
+
+### Integration Pattern (5 Steps)
+
+Any wallet can embed session keys by following this pattern:
+
+1. Add `component!()` declaration for `SessionKeyComponent` (and optionally `SpendingPolicyComponent`)
+2. Implement `HasAccountOwner` trait — delegate `assert_only_self()` to your own owner check
+3. Call `session_key.is_session_allowed_for_calls()` in `__validate__`
+4. Call `session_key.consume_session_call()` after signature verification
+5. Optionally call `spending_policy.check_and_update_spending()` in `__execute__`
+
+Session keys are a **reusable building block**, not a monolithic contract other wallets must fork.
+
 ---
 
 ## 📐 Standards Work
@@ -637,7 +726,7 @@ Contributions welcome! Please:
 1. Fork the repository
 2. Create a feature branch
 3. Write tests for new functionality
-4. Ensure all 46 tests pass
+4. Ensure all 65 tests pass
 5. Submit a pull request
 
 ---

@@ -4,7 +4,27 @@ This document tracks all contract class declarations on Starknet mainnet.
 
 ---
 
-## Latest: v32 — Audit 3 Fixes
+## Latest: v33 — Spending Policy + Component Extraction
+
+- **Class Hash**: `0x0484bbd2404b3c7264bea271f7267d6d4004821ac7787a9eed7f472e79ef40d1`
+- **Contract Address**: `0x03062f8ec52749beae94daee793871e60a4f71fdee577e9d9fb0c61260024806`
+- **Status**: Live (declared + upgraded)
+- **Tests**: 65 passing + 28/28 mainnet integration
+- **Starkscan**: [View Contract Class](https://starkscan.co/class/0x0484bbd2404b3c7264bea271f7267d6d4004821ac7787a9eed7f472e79ef40d1)
+- **Voyager**: [View Contract Class](https://voyager.online/class/0x0484bbd2404b3c7264bea271f7267d6d4004821ac7787a9eed7f472e79ef40d1)
+
+### What changed from v32
+
+- **SpendingPolicyComponent** — Per-token spending limits with per-call and rolling-window caps ([Issue #5](https://github.com/chipi-pay/sessions-smart-contract/issues/5), proposed by keep-starknet-strange / Omar Espejel)
+- **SessionKeyComponent extraction** — Reusable component any wallet can embed via `HasAccountOwner` trait
+- **9-selector admin blocklist** — Expanded from 7 with `set_spending_policy` and `remove_spending_policy`
+- **OZ v3.0.0 migration** — Starknet 2.14.0, snforge_std 0.54.1
+- **65 Cairo tests** — 19 new spending policy tests (expanded from 46)
+- **28/28 mainnet integration tests** — 7 new spending policy tests
+
+---
+
+### v32 — Audit 3 Fixes (February 2026)
 
 - **Class Hash**: `0x35a2251aca25daba18a5d8950deffa8372a7d84774554e75283cb85552eebc9`
 - **Contract Address**: `0x03062f8ec52749beae94daee793871e60a4f71fdee577e9d9fb0c61260024806`
@@ -52,7 +72,7 @@ See [AUDIT_RESPONSE_3.md](AUDIT_RESPONSE_3.md) for detailed responses.
 
 ## Upgrading Existing Contracts
 
-To upgrade existing contracts to v32:
+To upgrade existing contracts to v33:
 
 ```bash
 sncast --account deployer_oz \
@@ -60,7 +80,7 @@ sncast --account deployer_oz \
   invoke \
   --contract-address <YOUR_DEPLOYED_CONTRACT_ADDRESS> \
   --function upgrade \
-  --calldata 0x35a2251aca25daba18a5d8950deffa8372a7d84774554e75283cb85552eebc9 \
+  --calldata 0x0484bbd2404b3c7264bea271f7267d6d4004821ac7787a9eed7f472e79ef40d1 \
   --network mainnet
 ```
 

@@ -1,41 +1,32 @@
-// Session Data struct - exposed for tests
-#[derive(Drop, Copy, Serde, starknet::Store)]
-pub struct SessionData {
-    pub valid_until: u64,
-    pub max_calls: u32,
-    pub calls_used: u32,
-    pub allowed_entrypoints_len: u32,
-}
-
-// Session Key Management Interface - exposed for tests
-#[starknet::interface]
-pub trait ISessionKeyManager<TContractState> {
-    fn add_or_update_session_key(
-        ref self: TContractState,
-        session_key: felt252,
-        valid_until: u64,
-        max_calls: u32,
-        allowed_entrypoints: Array<felt252>
-    );
-    fn revoke_session_key(ref self: TContractState, session_key: felt252);
-    fn get_session_data(self: @TContractState, session_key: felt252) -> SessionData;
-}
+// Re-export for backward compatibility (tests import from sessions_smart_contract::account)
+pub use crate::session_key::interface::{
+    SessionData, ISessionKeyManager,
+    ISessionKeyManagerDispatcher, ISessionKeyManagerDispatcherTrait,
+};
+pub use crate::session_key::spending_policy::interface::{
+    SpendingPolicy, ISessionSpendingPolicy,
+    ISessionSpendingPolicyDispatcher, ISessionSpendingPolicyDispatcherTrait,
+};
 
 #[starknet::contract(account)]
 mod Account {
-    use super::SessionData;
-    use openzeppelin::account::AccountComponent;
+    use crate::session_key::interface::SessionData;
+    use crate::session_key::interface::SESSION_KEY_MANAGER_ID;
+    use crate::session_key::component::SessionKeyComponent;
+    use crate::session_key::spending_policy::component::SpendingPolicyComponent;
+    use crate::session_key::spending_policy::interface::SpendingPolicy;
+    use openzeppelin_account::AccountComponent;
     // SRC9Component for SNIP-9 compatibility
-    use openzeppelin::account::extensions::SRC9Component;
-    use openzeppelin::account::extensions::src9::{OutsideExecution, ISRC9_V2};
-    use openzeppelin::account::extensions::src9::snip12_utils::OutsideExecutionStructHash;
-    use openzeppelin::introspection::src5::SRC5Component;
-    use openzeppelin::upgrades::interface::IUpgradeable;
-    use openzeppelin::upgrades::UpgradeableComponent;
-    use openzeppelin::utils::cryptography::snip12::{OffchainMessageHash, SNIP12Metadata};
+    use openzeppelin_account::extensions::SRC9Component;
+    use openzeppelin_interfaces::src9::{OutsideExecution, ISRC9_V2};
+    use openzeppelin_account::extensions::src9::snip12_utils::OutsideExecutionStructHash;
+    use openzeppelin_introspection::src5::SRC5Component;
+    use openzeppelin_interfaces::upgrades::IUpgradeable;
+    use openzeppelin_upgrades::UpgradeableComponent;
+    use openzeppelin_utils::cryptography::snip12::{OffchainMessageHash, SNIP12Metadata};
     use starknet::ClassHash;
     use starknet::get_block_timestamp;
-    use starknet::storage::{Map, StorageMapReadAccess, StorageMapWriteAccess};
+    use starknet::storage::{StorageMapReadAccess, StorageMapWriteAccess};
     use starknet::account::Call;
     use starknet::get_tx_info;
     use starknet::get_contract_address;
@@ -74,6 +65,8 @@ mod Account {
     component!(path: SRC5Component, storage: src5, event: SRC5Event);
     component!(path: SRC9Component, storage: src9, event: SRC9Event);
     component!(path: UpgradeableComponent, storage: upgradeable, event: UpgradeableEvent);
+    component!(path: SessionKeyComponent, storage: session_key, event: SessionKeyEvent);
+    component!(path: SpendingPolicyComponent, storage: spending_policy, event: SpendingPolicyEvent);
 
     #[abi(embed_v0)]
     impl PublicKeyImpl = AccountComponent::PublicKeyImpl<ContractState>;
@@ -84,7 +77,7 @@ mod Account {
     impl AccountInternalImpl = AccountComponent::InternalImpl<ContractState>;
     impl SRC5InternalImpl = SRC5Component::InternalImpl<ContractState>;
     // DO NOT embed AccountComponent::SRC6Impl - we implement our own __validate__
-// DO NOT embed SRC9Component::SRC6Impl - we implement our own __validate__
+    // DO NOT embed SRC9Component::SRC6Impl - we implement our own __validate__
 
     // Upgradeable
     impl UpgradeableInternalImpl = UpgradeableComponent::InternalImpl<ContractState>;
@@ -93,6 +86,26 @@ mod Account {
     // NOTE: We do NOT embed SRC9Component::OutsideExecutionV2Impl because we need to
     // enforce session key whitelist and consume calls only AFTER signature validation
     impl SRC9InternalImpl = SRC9Component::InternalImpl<ContractState>;
+
+    // Session Key component internal impl
+    impl SessionKeyInternalImpl = SessionKeyComponent::InternalImpl<ContractState>;
+
+    // Spending Policy component internal impl
+    impl SpendingPolicyInternalImpl = SpendingPolicyComponent::InternalImpl<ContractState>;
+
+    // Provide HasAccountOwner so the session key component can enforce owner-only access
+    impl HasAccountOwnerImpl of SessionKeyComponent::HasAccountOwner<ContractState> {
+        fn assert_only_self(self: @ContractState) {
+            self.account.assert_only_self();
+        }
+    }
+
+    // Provide HasAccountOwner so the spending policy component can enforce owner-only access
+    impl SpendingPolicyHasAccountOwnerImpl of SpendingPolicyComponent::HasAccountOwner<ContractState> {
+        fn assert_only_self(self: @ContractState) {
+            self.account.assert_only_self();
+        }
+    }
 
     // SNIP-12 Metadata for Outside Execution message hashing (required for get_message_hash)
     impl SNIP12MetadataImpl of SNIP12Metadata {
@@ -117,8 +130,10 @@ mod Account {
         src9: SRC9Component::Storage,
         #[substorage(v0)]
         upgradeable: UpgradeableComponent::Storage,
-        session_keys: Map<felt252, SessionData>,
-        session_entrypoints: Map<(felt252, u32), felt252>,
+        #[substorage(v0)]
+        session_key: SessionKeyComponent::Storage,
+        #[substorage(v0)]
+        spending_policy: SpendingPolicyComponent::Storage,
     }
 
     #[event]
@@ -132,34 +147,15 @@ mod Account {
         SRC9Event: SRC9Component::Event,
         #[flat]
         UpgradeableEvent: UpgradeableComponent::Event,
-        SessionKeyAdded: SessionKeyAdded,
-        SessionKeyRevoked: SessionKeyRevoked,
+        #[flat]
+        SessionKeyEvent: SessionKeyComponent::Event,
+        #[flat]
+        SpendingPolicyEvent: SpendingPolicyComponent::Event,
     }
-
-    #[derive(Drop, starknet::Event)]
-    struct SessionKeyAdded {
-        #[key]
-        session_key: felt252,
-        valid_until: u64,
-        max_calls: u32,
-    }
-
-    #[derive(Drop, starknet::Event)]
-    struct SessionKeyRevoked {
-        #[key]
-        session_key: felt252,
-    }
-
-    /// SRC-5 interface ID for ISessionKeyManager.
-    /// Computed as: starknetKeccak("add_or_update_session_key")
-    ///            ^ starknetKeccak("revoke_session_key")
-    ///            ^ starknetKeccak("get_session_data")
-    const SESSION_KEY_MANAGER_ID: felt252 =
-        0x037ab4f01106526662a612eaa2926df2aa314c4144b964f183805880bbcfa55d;
 
     #[constructor]
     fn constructor(ref self: ContractState, public_key: felt252) {
-            self.account.initializer(public_key);   // registers ISRC6
+        self.account.initializer(public_key);   // registers ISRC6
         self.src9.initializer();                 // registers ISRC9_V2
         // Register custom session key manager interface (SRC-5)
         self.src5.register_interface(SESSION_KEY_MANAGER_ID);
@@ -174,10 +170,10 @@ mod Account {
         ///
         /// Dual-path validation:
         /// - Empty signature (len=0): Accepts only self-calls (routed via __execute__)
-        /// - Session signature (len=4): [session_pubkey, r, s, valid_until] — validates
+        /// - Session signature (len=4): [session_pubkey, r, s, valid_until] -- validates
         ///   session existence, expiry, call limit, admin blocklist, self-call block,
         ///   whitelist, then ECDSA signature. Consumes a call only after validation.
-        /// - Owner signature (len=2): [r, s] — delegates to OZ AccountComponent
+        /// - Owner signature (len=2): [r, s] -- delegates to OZ AccountComponent
         ///
         /// Returns VALIDATED on success, 0 on failure. Never panics for invalid input.
         #[external(v0)]
@@ -215,21 +211,21 @@ mod Account {
                 }
 
                 // SECURITY: Check session permissions (audit fix #2, #4)
-                if !self._is_session_allowed_for_calls(session_pubkey, calls.span()) {
+                if !self.session_key.is_session_allowed_for_calls(session_pubkey, calls.span()) {
                     return 0;
                 }
 
                 // Compute message hash and verify signature
-                let msg_hash = self._session_message_hash(calls.span(), valid_until);
+                let msg_hash = self.session_key.session_message_hash(calls.span(), valid_until);
                 if check_ecdsa_signature(msg_hash, session_pubkey, r, s) {
-                    self._consume_session_call(session_pubkey);
+                    self.session_key.consume_session_call(session_pubkey);
                     return starknet::VALIDATED;
                 } else {
                     return 0;
                 }
             }
 
-            // Owner path: 2-element signature → delegate to OZ
+            // Owner path: 2-element signature -> delegate to OZ
             if signature.len() == 2 {
                 return self.account.validate_transaction();
             }
@@ -242,7 +238,7 @@ mod Account {
         ///
         /// SECURITY: Caller restriction prevents external contracts from invoking
         /// __execute__ directly. Non-atomic: failed subcalls return empty spans
-        /// without reverting the batch (by design — see audit 1 finding #7).
+        /// without reverting the batch (by design -- see audit 1 finding #7).
         #[external(v0)]
         fn __execute__(ref self: ContractState, calls: Array<Call>) -> Array<Span<felt252>> {
             // Defense in depth: verify caller is either 0 (sequencer) or self
@@ -251,6 +247,16 @@ mod Account {
                 caller.is_zero() || caller == get_contract_address(),
                 'Account: unauthorized caller'
             );
+
+            // Spending policy enforcement for session key transactions.
+            // Must happen in __execute__ (not __validate__) because spending state
+            // mutations in validate would be reverted on execution failure.
+            let tx_info = get_tx_info().unbox();
+            let signature = tx_info.signature;
+            if signature.len() == 4 {
+                let session_pubkey = *signature.at(0);
+                self.spending_policy.check_and_update_spending(session_pubkey, calls.span());
+            }
 
             self._execute_calls(calls)
         }
@@ -275,7 +281,7 @@ mod Account {
         /// Read-only signature validation (ERC-1271 / SRC-6).
         ///
         /// Validates both owner (2-element) and session (4-element) signatures.
-        /// DOES NOT consume session calls or execute any calls — purely read-only.
+        /// DOES NOT consume session calls or execute any calls -- purely read-only.
         /// Cannot enforce selector whitelists (no call context available).
         /// Audit 1 finding #5: accepted tradeoff for paymaster compatibility.
         fn is_valid_signature(
@@ -290,17 +296,15 @@ mod Account {
                     *signature.at(0),
                     *signature.at(1)
                 );
-                
+
                 if is_valid {
                     return starknet::VALIDATED;
                 } else {
                     return 0;
                 }
             }
-            
+
             // Session path: 4-element signature [session_pubkey, r, s, valid_until]
-            // Note: For SNIP-9 outside execution, the hash is already computed by SRC9Component
-            // We just need to verify the session key signature
             if signature.len() == 4 {
                 let session_pubkey = *signature.at(0);
                 let r = *signature.at(1);
@@ -317,7 +321,7 @@ mod Account {
                 }
 
                 // Verify session key exists and is valid
-                let session = self.session_keys.read(session_pubkey);
+                let session = self.session_key.session_keys.read(session_pubkey);
                 if session.valid_until == 0 {
                     return 0;
                 }
@@ -353,22 +357,12 @@ mod Account {
     #[abi(embed_v0)]
     impl CustomSRC9V2Impl of ISRC9_V2<ContractState> {
         /// Executes calls on behalf of the account via SNIP-9 outside execution.
-        ///
-        /// Flow: validate caller → validate time bounds → consume nonce →
-        ///       (session path) bind valid_until, enforce whitelist →
-        ///       validate signature (dual hash: OZ u128 first, felt fallback) →
-        ///       consume session call → execute calls.
-        ///
-        /// SECURITY: For session signatures, whitelist is enforced BEFORE signature
-        /// validation and call consumption happens AFTER. valid_until in the signature
-        /// is bound to the stored session value to prevent relayer malleability
-        /// (audit 3 fix #5).
         fn execute_from_outside_v2(
             ref self: ContractState,
             outside_execution: OutsideExecution,
             signature: Span<felt252>,
         ) -> Array<Span<felt252>> {
-            // 1. Validate caller (0 or 'ANY_CALLER' means any caller is allowed - SNIP-9 standard)
+            // 1. Validate caller
             let caller_felt: felt252 = outside_execution.caller.into();
             let is_any_caller = caller_felt == 0 || caller_felt == 'ANY_CALLER';
             if !is_any_caller {
@@ -388,7 +382,6 @@ mod Account {
             self.src9.SRC9_nonces.write(outside_execution.nonce, true);
 
             // 4. SECURITY: For session signatures, enforce whitelist BEFORE signature validation
-            // This is the key fix for audit findings #2, #4
             let mut is_session_sig = false;
             let mut session_pubkey: felt252 = 0;
             if signature.len() == 4 {
@@ -396,29 +389,22 @@ mod Account {
                 session_pubkey = *signature.at(0);
 
                 // SECURITY (audit 3 fix #5): Bind valid_until to stored session value.
-                // Prevents relayer from extending valid_until beyond the session's limit.
                 let sig_valid_until: u64 = match (*signature.at(3)).try_into() {
                     Option::Some(v) => v,
                     Option::None => {
-                        core::panic_with_felt252('Session: invalid timestamp');
-                        0
+                        core::panic_with_felt252('Session: invalid timestamp')
                     }
                 };
-                let session = self.session_keys.read(session_pubkey);
+                let session = self.session_key.session_keys.read(session_pubkey);
                 assert(sig_valid_until <= session.valid_until, 'Session: valid_until exceeded');
 
                 assert(
-                    self._is_session_allowed_for_calls(session_pubkey, outside_execution.calls),
+                    self.session_key.is_session_allowed_for_calls(session_pubkey, outside_execution.calls),
                     'Session: unauthorized selector'
                 );
             }
 
             // 5. Compute message hash and validate signature
-            // We support TWO hash formats for compatibility:
-            // - OZ/Standard format: uses 'u128' for timestamps
-            // - Chipi Pay format: uses 'felt' for timestamps
-
-            // Convert signature span to arrays (need two copies for trying both hashes)
             let mut sig_copy1: Array<felt252> = array![];
             let mut sig_copy2: Array<felt252> = array![];
             let mut i: u32 = 0;
@@ -443,10 +429,15 @@ mod Account {
 
             assert(is_valid_signature, 'SRC9: invalid signature');
             if is_session_sig {
-                self._consume_session_call(session_pubkey);
+                self.session_key.consume_session_call(session_pubkey);
             }
 
-            // 6. Execute the calls
+            // 6. Spending enforcement for session keys (mirrors __execute__ check)
+            if is_session_sig {
+                self.spending_policy.check_and_update_spending(session_pubkey, outside_execution.calls);
+            }
+
+            // 7. Execute the calls
             self._execute_calls(outside_execution.calls.into())
         }
 
@@ -464,12 +455,8 @@ mod Account {
         }
     }
 
-    /// Session key management — owner-only access control.
-    /// All functions require caller == self (enforced by assert_only_self).
+    /// Session key management -- owner-only access control via component.
     impl SessionKeyManagerImpl of super::ISessionKeyManager<ContractState> {
-        /// Adds a new session key or updates an existing one.
-        /// Clears stale entrypoints before writing new ones (audit 1 fix #10).
-        /// Resets calls_used to 0 on update.
         fn add_or_update_session_key(
             ref self: ContractState,
             session_key: felt252,
@@ -477,75 +464,76 @@ mod Account {
             max_calls: u32,
             allowed_entrypoints: Array<felt252>
         ) {
-            self.account.assert_only_self();
-
-            // SECURITY: Clear stale entrypoints first (audit fix #10)
-            // When updating a session from N entrypoints to M < N, clear indices M to N-1
-            let old_session = self.session_keys.read(session_key);
-            let mut i = 0;
-            loop {
-                if i >= old_session.allowed_entrypoints_len {
-                    break;
-                }
-                self.session_entrypoints.write((session_key, i), 0);
-                i += 1;
-            };
-
-            let sess = SessionData {
-                valid_until,
-                max_calls,
-                calls_used: 0,
-                allowed_entrypoints_len: allowed_entrypoints.len(),
-            };
-            self.session_keys.write(session_key, sess);
-
-            // Store new allowed entrypoints
-            let mut i = 0;
-            loop {
-                if i >= allowed_entrypoints.len() {
-                    break;
-                }
-                self._store_entrypoint(session_key, i, *allowed_entrypoints.at(i));
-                i += 1;
-            };
-
-            self.emit(SessionKeyAdded { session_key, valid_until, max_calls });
+            self.session_key.add_or_update_session_key(session_key, valid_until, max_calls, allowed_entrypoints);
         }
 
-        /// Revokes a session key. Clears all stored entrypoints and zeroes SessionData.
         fn revoke_session_key(ref self: ContractState, session_key: felt252) {
-            self.account.assert_only_self();
-
-            // Get the current session data to know how many entrypoints to clear
-            let current_session = self.session_keys.read(session_key);
-            let entrypoints_to_clear = current_session.allowed_entrypoints_len;
-            
-            // Clear all stored entrypoints for this session key
-            let mut i = 0;
-            loop {
-                if i >= entrypoints_to_clear {
-                    break;
-                }
-                // Clear the entrypoint by writing 0 (default value)
-                self.session_entrypoints.write((session_key, i), 0);
-                i += 1;
-            };
-            
-            let sess = SessionData {
-                valid_until: 0,
-                max_calls: 0,
-                calls_used: 0,
-                allowed_entrypoints_len: 0,
-            };
-            self.session_keys.write(session_key, sess);
-
-            self.emit(SessionKeyRevoked { session_key });
+            self.session_key.revoke_session_key(session_key);
         }
 
         fn get_session_data(self: @ContractState, session_key: felt252) -> SessionData {
-            // Return session data for the given key
-            self.session_keys.read(session_key)
+            self.session_key.get_session_data(session_key)
         }
+    }
+
+    /// Spending policy management -- owner-only access control via component.
+    impl SpendingPolicyManagerImpl of super::ISessionSpendingPolicy<ContractState> {
+        fn set_spending_policy(
+            ref self: ContractState,
+            session_key: felt252,
+            token: starknet::ContractAddress,
+            max_per_call: u256,
+            max_per_window: u256,
+            window_seconds: u64,
+        ) {
+            self.spending_policy.set_spending_policy(session_key, token, max_per_call, max_per_window, window_seconds);
+        }
+
+        fn get_spending_policy(
+            self: @ContractState,
+            session_key: felt252,
+            token: starknet::ContractAddress,
+        ) -> SpendingPolicy {
+            self.spending_policy.get_spending_policy(session_key, token)
+        }
+
+        fn remove_spending_policy(
+            ref self: ContractState,
+            session_key: felt252,
+            token: starknet::ContractAddress,
+        ) {
+            self.spending_policy.remove_spending_policy(session_key, token);
+        }
+    }
+
+    #[external(v0)]
+    fn set_spending_policy(
+        ref self: ContractState,
+        session_key: felt252,
+        token: starknet::ContractAddress,
+        max_per_call: u256,
+        max_per_window: u256,
+        window_seconds: u64,
+    ) {
+        SpendingPolicyManagerImpl::set_spending_policy(ref self, session_key, token, max_per_call, max_per_window, window_seconds);
+    }
+
+    #[external(v0)]
+    fn get_spending_policy(
+        self: @ContractState,
+        session_key: felt252,
+        token: starknet::ContractAddress,
+    ) -> SpendingPolicy {
+        SpendingPolicyManagerImpl::get_spending_policy(self, session_key, token)
+    }
+
+    #[external(v0)]
+    fn remove_spending_policy(
+        ref self: ContractState,
+        session_key: felt252,
+        token: starknet::ContractAddress,
+    ) {
+        SpendingPolicyManagerImpl::remove_spending_policy(ref self, session_key, token);
     }
 
     // External entry points for session management
@@ -570,40 +558,32 @@ mod Account {
         SessionKeyManagerImpl::get_session_data(self, session_key)
     }
 
-    /// One-time post-upgrade initializer: registers SRC-5 interface IDs that
-    /// the constructor would set on a fresh deploy. Owner-only (assert_only_self).
-    /// Idempotent — safe to call multiple times.
+    /// One-time post-upgrade initializer: registers SRC-5 interface IDs.
     #[external(v0)]
     fn register_interfaces(ref self: ContractState) {
         self.account.assert_only_self();
         self.src5.register_interface(SESSION_KEY_MANAGER_ID);
     }
 
-    // Production-safe functions (no security vulnerabilities)
     #[external(v0)]
     fn get_contract_info(self: @ContractState) -> felt252 {
-        'v32'
+        'v33'
     }
 
-    // SNIP-9 version check - returns 2 for SNIP-9 v2 compatibility
     #[external(v0)]
     fn get_snip9_version(self: @ContractState) -> u8 {
-        // This account is compatible with SNIP-9 v2 (Outside Execution)
         2
     }
 
-    // Safe debugging: uses real tx_info (no forced parameters)
     #[external(v0)]
     fn compute_session_message_hash(
         self: @ContractState,
         calls: Array<starknet::account::Call>,
         valid_until: u64
     ) -> felt252 {
-        self._session_message_hash(calls.span(), valid_until)
+        self.session_key.session_message_hash(calls.span(), valid_until)
     }
 
-    // ERC-1271 compatible signature validation
-    // Delegates to SRC6Impl::is_valid_signature to avoid duplicate logic
     #[external(v0)]
     fn is_valid_signature(
         self: @ContractState,
@@ -613,211 +593,39 @@ mod Account {
         SRC6Impl::is_valid_signature(self, hash, signature)
     }
 
-    // Read-only session entrypoint helpers (safe)
     #[external(v0)]
     fn get_session_allowed_entrypoints_len(self: @ContractState, session_key: felt252) -> u32 {
-        let s = self.session_keys.read(session_key);
-        s.allowed_entrypoints_len
+        self.session_key.get_session_allowed_entrypoints_len(session_key)
     }
 
     #[external(v0)]
     fn get_session_allowed_entrypoint_at(
-        self: @ContractState, 
-        session_key: felt252, 
+        self: @ContractState,
+        session_key: felt252,
         index: u32
     ) -> felt252 {
-        self._load_entrypoint(session_key, index)
+        self.session_key.get_session_allowed_entrypoint_at(session_key, index)
     }
 
     #[generate_trait]
     impl InternalImpl of InternalTrait {
-        fn _store_entrypoint(ref self: ContractState, session_key: felt252, index: u32, entrypoint: felt252) {
-            self.session_entrypoints.write((session_key, index), entrypoint);
-        }
-
-        fn _load_entrypoint(self: @ContractState, session_key: felt252, index: u32) -> felt252 {
-            self.session_entrypoints.read((session_key, index))
-        }
-
-        /// Pure session validation check (no mutations).
-        ///
-        /// SECURITY: Enforces two layers of protection against privilege escalation:
-        ///
-        /// Layer 1 — Admin selector blocklist (defense-in-depth):
-        ///   Blocks 7 specific selectors that grant privileged access regardless of
-        ///   whitelist configuration. This is a denylist and is inherently fragile
-        ///   (each OZ upgrade or new embedded impl may expose new selectors).
-        ///   Audit history: audit 1 added upgrade/add/revoke, audit 2 added __execute__,
-        ///   audit 3 added set_public_key/setPublicKey/execute_from_outside_v2.
-        ///
-        /// Layer 2 — Self-call block for empty whitelist (primary protection):
-        ///   When allowed_entrypoints_len == 0 (open whitelist), sessions CANNOT target
-        ///   the account contract itself. This eliminates the entire class of self-call
-        ///   privilege escalation, protecting against any future OZ selector additions
-        ///   without needing to update the blocklist.
-        ///
-        /// Together: the blocklist catches known selectors even for explicit whitelists,
-        /// and the self-call block catches ALL self-targeting calls for open whitelists.
-        fn _is_session_allowed_for_calls(
-            self: @ContractState,
-            session_key: felt252,
-            calls: Span<Call>
-        ) -> bool {
-            let session = self.session_keys.read(session_key);
-            if session.valid_until == 0 { return false; }
-            if get_block_timestamp() > session.valid_until { return false; }
-            if session.calls_used >= session.max_calls { return false; }
-
-            // SECURITY Layer 1: Admin selector blocklist — sessions can NEVER call these.
-            // This prevents session keys from upgrading the account, managing sessions,
-            // rotating the owner key, or re-entering privileged execution paths.
-            let UPGRADE_SELECTOR: felt252 = selector!("upgrade");
-            let ADD_SESSION_SELECTOR: felt252 = selector!("add_or_update_session_key");
-            let REVOKE_SESSION_SELECTOR: felt252 = selector!("revoke_session_key");
-            let EXECUTE_SELECTOR: felt252 = selector!("__execute__");
-            // Audit 3 additions:
-            let SET_PUBLIC_KEY_SELECTOR: felt252 = selector!("set_public_key");
-            let SET_PUBLIC_KEY_CAMEL_SELECTOR: felt252 = selector!("setPublicKey");
-            let EXECUTE_FROM_OUTSIDE_V2_SELECTOR: felt252 = selector!("execute_from_outside_v2");
-
-            // First pass: check for blocked admin selectors
-            let mut i = 0;
-            loop {
-                if i >= calls.len() { break; }
-                let call = calls.at(i);
-                let sel = *call.selector;
-
-                // Block admin/privileged functions regardless of whitelist
-                if sel == UPGRADE_SELECTOR
-                    || sel == ADD_SESSION_SELECTOR
-                    || sel == REVOKE_SESSION_SELECTOR
-                    || sel == EXECUTE_SELECTOR
-                    || sel == SET_PUBLIC_KEY_SELECTOR
-                    || sel == SET_PUBLIC_KEY_CAMEL_SELECTOR
-                    || sel == EXECUTE_FROM_OUTSIDE_V2_SELECTOR {
-                    return false;
-                }
-                i += 1;
-            };
-
-            // SECURITY Layer 2: Self-call block for empty whitelist.
-            // When allowed_entrypoints_len == 0 (open whitelist), block ALL calls
-            // targeting the account contract itself. This eliminates the entire class
-            // of privilege escalation via self-calls, protecting against any future
-            // OZ embedded impl selectors without needing blocklist updates.
-            if session.allowed_entrypoints_len == 0 {
-                let account_address = get_contract_address();
-                let mut i = 0;
-                loop {
-                    if i >= calls.len() { break; }
-                    let call = calls.at(i);
-                    if *call.to == account_address {
-                        return false;
-                    }
-                    i += 1;
-                };
-                return true;
-            }
-
-            // Second pass: verify all selectors are in the explicit whitelist
-            let mut i = 0;
-            loop {
-                if i >= calls.len() { break; }
-                let call = calls.at(i);
-                let selector = *call.selector;
-
-                let mut j = 0;
-                let mut found = false;
-                loop {
-                    if j >= session.allowed_entrypoints_len { break; }
-                    let allowed = self._load_entrypoint(session_key, j);
-                    if allowed == selector { found = true; break; }
-                    j += 1;
-                };
-                if !found { return false; }
-                i += 1;
-            };
-            true
-        }
-
-        // NEW: Consume session call (increment counter only)
-        fn _consume_session_call(ref self: ContractState, session_key: felt252) {
-            let mut session = self.session_keys.read(session_key);
-            session.calls_used += 1;
-            self.session_keys.write(session_key, session);
-        }
-
-        /// Compute Poseidon message hash for session signature verification.
-        ///
-        /// Binds: account address, chain_id, nonce, valid_until, and all call data.
-        /// Does NOT bind fee parameters (resource bounds, tip, paymaster data) —
-        /// this is an accepted tradeoff for paymaster compatibility where the user
-        /// does not pay gas (audit 2 finding #2).
-        fn _session_message_hash(
-            self: @ContractState,
-            calls: Span<Call>,
-            valid_until: u64
-        ) -> felt252 {
-            let tx_info = get_tx_info().unbox();
-            let mut hash_data = array![];
-            
-            // Add base transaction info (matching frontend order)
-            hash_data.append(get_contract_address().into());    // ozAddr (contract address)
-            hash_data.append(tx_info.chain_id.into());          // chain ID
-            hash_data.append(tx_info.nonce.into());             // nonce
-            hash_data.append(valid_until.into());               // valid until timestamp
-            
-            // Hash each call (matching frontend structure)
-            let mut i = 0;
-            loop {
-                if i >= calls.len() {
-                    break;
-                }
-                let call = calls.at(i);
-                
-                // Add call info (matching frontend order)
-                hash_data.append((*call.to).into());            // target contract address
-                hash_data.append((*call.selector).into());      // function selector
-                hash_data.append(call.calldata.len().into());   // calldata length
-                
-                // Add calldata elements
-                let mut j = 0;
-                loop {
-                    if j >= call.calldata.len() {
-                        break;
-                    }
-                    hash_data.append((*call.calldata.at(j)).into());
-                    j += 1;
-                };
-                
-                i += 1;
-            };
-
-            poseidon_hash_span(hash_data.span())
-        }
-
         /// Compute SNIP-12 message hash for OutsideExecution using felt timestamps (legacy fallback).
-        /// The primary path uses OZ standard (u128 timestamps). This fallback handles older
-        /// paymaster versions that encode timestamps as felt instead of u128.
         fn _compute_outside_execution_hash(
             self: @ContractState,
             outside_execution: @OutsideExecution,
         ) -> felt252 {
-            // Domain: {name: 'Account.execute_from_outside', version: '2', chainId: chain_id, revision: '1'}
             let chain_id = get_tx_info().unbox().chain_id;
 
-            // Domain hash: H(DOMAIN_TYPE_HASH, name, version, chainId, revision)
             let domain_hash = poseidon_hash_span(
                 array![
                     STARKNET_DOMAIN_TYPE_HASH_REV1,
-                    'Account.execute_from_outside',  // name
-                    2,                                // version (as shortstring/felt)
-                    chain_id,                         // chainId
-                    1                                 // revision
+                    'Account.execute_from_outside',
+                    2,
+                    chain_id,
+                    1
                 ].span()
             );
 
-            // Hash each Call struct
             let calls = *outside_execution.calls;
             let mut calls_hashes: Array<felt252> = array![];
             let mut i: u32 = 0;
@@ -825,10 +633,8 @@ mod Account {
                 if i >= calls.len() { break; }
                 let call = calls.at(i);
 
-                // Hash calldata array
                 let calldata_hash = poseidon_hash_span(*call.calldata);
 
-                // Call struct hash: H(CALL_TYPE_HASH, to, selector, calldata_hash)
                 let call_hash = poseidon_hash_span(
                     array![
                         CALL_TYPE_HASH_REV1,
@@ -841,23 +647,19 @@ mod Account {
                 i += 1;
             };
 
-            // Hash the calls array
             let calls_array_hash = poseidon_hash_span(calls_hashes.span());
 
-            // OutsideExecution struct hash: H(TYPE_HASH, caller, nonce, execute_after, execute_before, calls_hash)
-            // NOTE: Using felt for timestamps to match Chipi Pay paymaster
             let struct_hash = poseidon_hash_span(
                 array![
                     OUTSIDE_EXECUTION_TYPE_HASH_REV1,
                     (*outside_execution.caller).into(),
                     *outside_execution.nonce,
-                    (*outside_execution.execute_after).into(),  // u64 -> felt252
-                    (*outside_execution.execute_before).into(), // u64 -> felt252
+                    (*outside_execution.execute_after).into(),
+                    (*outside_execution.execute_before).into(),
                     calls_array_hash
                 ].span()
             );
 
-            // Final message hash: H(prefix, domain_hash, account_address, struct_hash)
             poseidon_hash_span(
                 array![
                     STARKNET_MESSAGE_PREFIX,

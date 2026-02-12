@@ -1,7 +1,7 @@
 use starknet::ContractAddress;
 use starknet::account::Call;
 use starknet::testing::{set_contract_address, set_block_timestamp, set_transaction_hash, set_chain_id};
-use snforge_std_deprecated::{
+use snforge_std::{
     declare, ContractClassTrait, DeclareResultTrait,
     start_cheat_caller_address, stop_cheat_caller_address,
     start_cheat_signature_global, stop_cheat_signature_global,

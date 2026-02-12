@@ -60,3 +60,6 @@ scripts/
 src/forwarder.cairo
 whitelist-relayers.sh
 tests/test_forwarder*.cairo
+
+# Forum posts (draft, not for repo)
+FORUM_POSTS.txt

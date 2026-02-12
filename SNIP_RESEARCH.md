@@ -16,7 +16,7 @@ Chipi Pay has built and deployed a **full-stack production system** for gasless,
 - **Modified Paymaster Backend** (Rust) — Forked from AVNU's paymaster, adapted for OpenZeppelin-based session accounts
 - **Forwarder Contract** (Cairo) — Whitelisted relayer that routes sponsored transactions
 
-The system is live on Starknet mainnet with class hash `0x35a2251aca25daba18a5d8950deffa8372a7d84774554e75283cb85552eebc9` (v32), scanned four times by Nethermind's AuditAgent (AI-powered auditing tool, January and February 2026, final scan: 0 findings), and backed by 46 passing tests.
+The system is live on Starknet mainnet with class hash `0x0484bbd2404b3c7264bea271f7267d6d4004821ac7787a9eed7f472e79ef40d1` (v33), scanned four times by Nethermind's AuditAgent (AI-powered auditing tool, January and February 2026, final scan: 0 findings), and backed by 65 passing tests.
 
 ### The Full Stack
 
@@ -316,11 +316,11 @@ A standard should accommodate all of them.
 
 ### OpenZeppelin
 
-**Role**: Foundation layer — Cairo Contracts v2.0.0
+**Role**: Foundation layer — Cairo Contracts v3.0.0
 
-OpenZeppelin's Cairo Contracts provide the building blocks: `AccountComponent`, `SRC5Component`, `SRC9Component`, and `UpgradeableComponent`. Our contract is built directly on these components.
+OpenZeppelin's Cairo Contracts provide the building blocks: `AccountComponent`, `SRC5Component`, `SRC9Component`, and `UpgradeableComponent`. Our contract is built directly on these components, migrated from v2.0.0 to v3.0.0 for alignment with the latest ecosystem (starknet 2.14.0).
 
-Key contribution: The component model in Cairo Contracts v2.0.0 allows us to embed OpenZeppelin's battle-tested account logic while overriding specific functions (like `__validate__`) with custom session key logic. Without this architecture, every session key implementation would need to re-implement account basics from scratch.
+Key contribution: The component model allows us to embed OpenZeppelin's battle-tested account logic while overriding specific functions (like `__validate__`) with custom session key logic. Our `SessionKeyComponent` and `SpendingPolicyComponent` follow the same component pattern, making them embeddable by any OZ-based account without copying the entire contract.
 
 **Team**: Martin Triay and the OpenZeppelin Cairo team.
 
@@ -374,6 +374,16 @@ Nethermind's AuditAgent (AI-powered auditing tool) performed four scans of the s
 
 Bibliotheca DAO built the original "Arcade Accounts" — the first session key implementation in the Starknet ecosystem. This originated from a collaboration between Chris Lexmond (Influence game) and Loaf (Loot Realms / Bibliotheca). Their work demonstrated the concept and inspired subsequent implementations.
 
+### keep-starknet-strange / starknet-agentic
+
+**Role**: Agent account with spending policies (OZ v3)
+
+Omar Espejel and the keep-starknet-strange team built starknet-agentic — an agent account implementation on OZ v3 / Starknet 2.14.0 with per-token spending policies, ERC-8004-inspired design, and a swap-and-remove session list. Their spending policy tracks 4 ERC-20 selectors (`transfer`, `approve`, `increase_allowance`, `increaseAllowance`) with per-call caps and 24h rolling-window cumulative limits.
+
+Omar proposed `ISessionSpendingPolicy` as an extension for our implementation ([Issue #5](https://github.com/chipi-pay/sessions-smart-contract/issues/5)). The collaboration led to the `SpendingPolicyComponent` — an optional, separate component that can be embedded alongside `SessionKeyComponent`. Our implementations are complementary: starknet-agentic has spending policies but lacks our SNIP-9 integration, admin blocklist, per-selector whitelists, and `valid_until` signature binding. We adopted their spending policy pattern while preserving our security features.
+
+**Relevant work**: starknet-agentic agent account, ERC-8004 alignment, spending policy design.
+
 ### EthSign
 
 **Role**: Forum proposal for function call delegation
@@ -395,6 +405,7 @@ Every team has built their own session key implementation:
 | **Cartridge** | Controller + passkeys | WebAuthn | Controller-specific | Yes (custom) |
 | **Chipi Pay** | On-chain validation | 4 elements [pubkey, r, s, expiry] | Dual: OZ U128 + felt fallback | Yes (via AVNU) |
 | **Bibliotheca** | Arcade Accounts | Custom | Custom | No |
+| **starknet-agentic** | Agent account + spending policies | 3 elements | OZ standard | No |
 
 These implementations are **mutually incompatible**. A dApp built for Argent sessions won't work with Braavos sessions. A paymaster built for one format can't validate another.
 
@@ -567,12 +578,40 @@ Integrated with AVNU's paymaster, creating a development fork (`openzep` branch)
 
 0 findings. Clean report on v32 (commit `9be9629b`). The self-call block and expanded blocklist eliminated the systemic vulnerability class. Findings trajectory: **10 → 3 → 5 → 0**.
 
+### Phase 9: OZ v3 Migration, Component Extraction, and Spending Policy (February 2026)
+
+Three architectural improvements in preparation for ecosystem adoption:
+
+1. **OZ v2 → v3 Migration**: Upgraded from OpenZeppelin Cairo Contracts v2.0.0 to v3.0.0 (starknet 2.14.0, snforge_std 0.54.1). This aligns with starknet-agentic and the latest ecosystem tooling.
+
+2. **SessionKeyComponent Extraction**: Extracted all session key logic from the monolithic 892-line `account.cairo` into a reusable `SessionKeyComponent` under `src/session_key/`. Any account can now embed session key functionality by implementing the `HasAccountOwner` trait (a single function: `assert_only_self()`). The component has **zero OpenZeppelin dependencies** — any wallet framework (Argent, Braavos, Cartridge, custom) can embed it. Pure refactor — all existing tests passed unchanged.
+
+3. **SpendingPolicyComponent**: Added `ISessionSpendingPolicy` as an optional extension ([Issue #5](https://github.com/chipi-pay/sessions-smart-contract/issues/5), proposed by keep-starknet-strange / Omar Espejel). The `SpendingPolicyComponent` provides per-(session_key, token) spending limits with per-call caps and rolling-window cumulative caps. Informed by starknet-agentic's working implementation, which tracks the same 4 ERC-20 selectors. Implemented as a separate optional component, not baked into the session key component.
+
+### Phase 10: v33 Deployment and Mainnet Validation (February 2026)
+
+v33 deployed to Starknet mainnet with class hash `0x0484bbd2404b3c7264bea271f7267d6d4004821ac7787a9eed7f472e79ef40d1`:
+
+- **65 Cairo tests** — expanded from 57 with 8 additional spending policy tests covering ERC-20 selector tracking, exact limit boundaries, multi-call cumulative enforcement, and per-session independence
+- **28/28 mainnet integration tests** — 7 new spending policy tests validated against the live contract on mainnet via the web dashboard
+- **Admin blocklist expanded from 7 to 9 selectors** — added `set_spending_policy` and `remove_spending_policy` to prevent session keys from modifying their own spending limits
+- **Component architecture validated** — `SessionKeyComponent` requires only a 1-function `HasAccountOwner` trait (`assert_only_self()`), with zero OpenZeppelin dependencies. Any wallet framework can embed session keys in 5 steps:
+  1. Add `component!()` declaration
+  2. Implement `HasAccountOwner` (delegate to your own owner check)
+  3. Call `session_key.is_session_allowed_for_calls()` in `__validate__`
+  4. Call `session_key.consume_session_call()` after signature verification
+  5. Optionally call `spending_policy.check_and_update_spending()` in `__execute__`
+
+This is the key differentiator compared to other session key implementations: Argent's guardian model is tightly coupled to their wallet architecture, Braavos uses an external library, and Cartridge's Controller is gaming-specific. Chipi's `SessionKeyComponent` is the most embeddable approach — any wallet, any framework, 5 steps.
+
 ### Current State
 
-- **Production on mainnet**: Class hash `0x35a2251aca25daba18a5d8950deffa8372a7d84774554e75283cb85552eebc9` (v32)
-- **46 tests passing**: 21 session validation + 22 audit regression + 3 SNIP-9 compatibility
+- **Production on mainnet**: Class hash `0x0484bbd2404b3c7264bea271f7267d6d4004821ac7787a9eed7f472e79ef40d1` (v33)
+- **65 tests passing**: 21 session validation + 22 audit regression + 3 SNIP-9 compatibility + 19 spending policy
+- **28/28 mainnet integration tests**: Including 7 new spending policy tests
 - **Four Nethermind AuditAgent scans**: All critical findings fixed, accepted tradeoffs documented, scan 4 returned 0 findings. A human-led audit is a logical next step.
-- **Dependencies**: OpenZeppelin Cairo Contracts v2.0.0, AVNU Contracts Lib v0.1.0, Starknet >= 2.8.0
+- **Architecture**: Reusable `SessionKeyComponent` + optional `SpendingPolicyComponent`, embeddable by any wallet via `HasAccountOwner` trait (zero OZ dependencies)
+- **Dependencies**: OpenZeppelin Cairo Contracts v3.0.0, Starknet 2.14.0
 
 ### Phase 8: Standards Submission
 
@@ -609,6 +648,10 @@ Julien Niset (Argent), delaaxe (Braavos), and AVNU — for designing the outside
 ### Bibliotheca DAO
 
 For building the first session key implementation (Arcade Accounts) and proving the concept before anyone else. Chris Lexmond and Loaf showed the ecosystem what was possible.
+
+### keep-starknet-strange / Omar Espejel
+
+For proposing `ISessionSpendingPolicy` ([Issue #5](https://github.com/chipi-pay/sessions-smart-contract/issues/5)) and sharing the starknet-agentic agent account implementation. Their spending policy design — per-token ERC-20 tracking with rolling-window caps — directly informed our `SpendingPolicyComponent`. The collaboration demonstrates that the session key ecosystem benefits from complementary implementations working toward shared interfaces.
 
 ---
 
@@ -650,8 +693,10 @@ The following selectors are blocked for ALL session keys, regardless of whitelis
 | `selector!("set_public_key")` | Owner key rotation | Prevents account takeover via OZ PublicKeyImpl | Audit 3 |
 | `selector!("setPublicKey")` | Owner key rotation (camel) | Prevents account takeover via OZ PublicKeyCamelImpl | Audit 3 |
 | `selector!("execute_from_outside_v2")` | Nested SNIP-9 | Prevents double nonce/call consumption | Audit 3 |
+| `selector!("set_spending_policy")` | Spending policy modification | Prevents session key from raising its own spending caps | v33 |
+| `selector!("remove_spending_policy")` | Spending policy removal | Prevents session key from removing its own spending limits | v33 |
 
-**Self-call block (v32)**: In addition to the blocklist, sessions with `allowed_entrypoints_len == 0` (empty whitelist) cannot target the account contract at all (`call.to != get_contract_address()`). This eliminates the entire class of privilege escalation via self-calls.
+**Self-call block (v32, extended in v33)**: In addition to the blocklist, sessions with `allowed_entrypoints_len == 0` (empty whitelist) cannot target the account contract at all (`call.to != get_contract_address()`). This eliminates the entire class of privilege escalation via self-calls.
 
 ## Appendix C: Test Coverage Summary
 
@@ -661,4 +706,5 @@ The following selectors are blocked for ALL session keys, regardless of whitelis
 | Audit 1+2 Fix Regressions | 14 | One or more tests per Nethermind finding from audits 1 and 2 |
 | Audit 3 Fix Regressions | 8 | Blocklist expansion, self-call block, SRC-5 registration, external call allowance |
 | SNIP-9 Compatibility | 3 | Version checks, interface detection, session + SNIP-9 integration |
-| **Total** | **46** | |
+| Spending Policy | 19 | Set/get/remove, auth checks, multi-token, per-call limits, window cumulative limits, window reset, ERC-20 selector tracking (transfer, approve, increase_allowance), admin blocklist enforcement, per-session independence |
+| **Total** | **65** | |

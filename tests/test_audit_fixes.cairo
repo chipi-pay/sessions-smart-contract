@@ -4,7 +4,7 @@
 
 use starknet::ContractAddress;
 use starknet::account::Call;
-use snforge_std_deprecated::{
+use snforge_std::{
     declare, ContractClassTrait, DeclareResultTrait,
     start_cheat_caller_address, stop_cheat_caller_address,
     start_cheat_signature_global, stop_cheat_signature_global,
@@ -14,8 +14,8 @@ use snforge_std_deprecated::{
 use sessions_smart_contract::account::{
     ISessionKeyManagerDispatcher, ISessionKeyManagerDispatcherTrait
 };
-use openzeppelin::account::extensions::src9::OutsideExecution;
-use openzeppelin::introspection::interface::{ISRC5Dispatcher, ISRC5DispatcherTrait};
+use openzeppelin_interfaces::src9::OutsideExecution;
+use openzeppelin_interfaces::introspection::{ISRC5Dispatcher, ISRC5DispatcherTrait};
 
 // ---------- dispatcher interfaces for account entrypoints ----------
 
@@ -366,7 +366,7 @@ fn test_audit7_execute_continues_after_failed_subcall() {
     // Second result should contain 'v32' (the return value of get_contract_info).
     let second = *result.at(1);
     assert(second.len() > 0, 'second call should succeed');
-    assert(*second.at(0) == 'v32', 'wrong return value');
+    assert(*second.at(0) == 'v33', 'wrong return value');
 
     stop_cheat_caller_address(account);
 }
