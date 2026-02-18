@@ -1,9 +1,9 @@
 ---
-snip: TBD
+snip: X
 title: Session Keys for Smart Accounts
-description: Standard interface for session key management and paymaster interaction on Starknet smart accounts.
-author: Chipi Pay <https://github.com/chipi-pay>, Omar Espejel (@omarespejel) <https://github.com/omarespejel>
-discussions-to: TBD <!-- Must point to a community.starknet.io/c/development-proposals/snip topic -->
+description: Session key management and paymaster interaction protocol for Starknet smart accounts.
+author: Chipi Pay (@chipi-pay), Omar Espejel (@omarespejel)
+discussions-to: https://community.starknet.io/t/snip-session-keys-for-smart-accounts/116131
 status: Draft
 type: Standards Track
 category: SRC
@@ -26,7 +26,7 @@ This SNIP defines:
 5. A paymaster-account interaction protocol covering discovery, `OutsideExecution` construction, and signature passthrough
 6. A canonical SNIP-12 typed data format for session-aware `OutsideExecution` hashing
 
-Together, these components enable any compliant wallet to create session keys that any compliant paymaster can sponsor — without forking, custom integrations, or hash format negotiation.
+Together, these components enable any compliant wallet to create session keys that any compliant paymaster can sponsor, without forking, custom integrations, or hash format negotiation.
 
 ## Motivation
 
@@ -42,17 +42,17 @@ Session keys are the most impactful UX improvement for on-chain applications. Th
 | Chipi Pay | On-chain validation | 4 elements | Via AVNU |
 | starknet-agentic | Agent account + spending policies | 3 elements | No |
 
-Each of these approaches serves real use cases well. Argent's guardian model is battle-tested at consumer scale. Braavos' library approach keeps wallet contracts simple. Cartridge's passkey integration serves gaming. Bibliotheca DAO's Arcade Accounts pioneered the concept. This SNIP does not propose replacing any of them — it proposes a shared interface layer that enables interoperability.
+Each of these approaches serves real use cases well. Argent's guardian model is battle-tested at consumer scale. Braavos' library approach keeps wallet contracts simple. Cartridge's passkey integration serves gaming. Bibliotheca DAO's Arcade Accounts pioneered the concept. This SNIP does not propose replacing any of them. It proposes a shared interface layer that enables interoperability.
 
 This diversity creates coordination challenges:
 
-- **Paymaster integration complexity**: Integrating a custom session account with AVNU's paymaster revealed that implementation details matter: incorrect caller fields, SNIP-12 timestamp type mismatches (Felt vs U128), and missing SRC-5 interface registration caused signature validation failures — all on the account side. AVNU's paymaster works correctly with properly configured accounts. This experience demonstrates the value of a shared specification.
+- **Paymaster integration complexity**: Integrating a custom session account with AVNU's paymaster revealed that implementation details matter: incorrect caller fields, SNIP-12 timestamp type mismatches (Felt vs U128), and missing SRC-5 interface registration caused signature validation failures, all on the account side. AVNU's paymaster works correctly with properly configured accounts. This experience demonstrates the value of a shared specification.
 - **dApp fragmentation**: Applications must build separate session integrations for each wallet.
 - **Audit duplication**: Each implementation requires its own security review. Nethermind's AuditAgent (AI-powered auditing tool) scanned the reference implementation four times; Argent, Braavos, and Cartridge each have separate audit surfaces.
 
 **A standard enables**: any paymaster works with any session account, any dApp SDK works with any session wallet, and the community shares a single audited specification.
 
-**Why now**: Starknet's account ecosystem is converging on native passkeys (WebAuthn/secp256r1) for owner authentication — Cartridge's Controller, Braavos' Hardware Signer, and discussions in the [SNIP-6 forum thread](https://community.starknet.io/t/snip-starknet-standard-account/95665) confirm this direction. Passkeys make self-custodial wallets the default onboarding path: no seed phrases, just biometrics. But passkeys solve *authentication* — they prove who you are. Session keys solve *authorization* — they define what a delegate can do. As passkey-based wallets become the default, session key standardization becomes essential: every new user who onboards via Face ID will need scoped, revocable delegation for dApps, agents, and automated workflows. These are complementary layers of the same UX stack.
+**Why now**: Starknet's account ecosystem is converging on native passkeys (WebAuthn/secp256r1) for owner authentication. Cartridge's Controller, Braavos' Hardware Signer, and discussions in the [SNIP-6 forum thread](https://community.starknet.io/t/snip-starknet-standard-account/95665) confirm this direction. Passkeys make self-custodial wallets the default onboarding path: no seed phrases, just biometrics. But passkeys solve *authentication*: they prove who you are. Session keys solve *authorization*: they define what a delegate can do. As passkey-based wallets become the default, session key standardization becomes essential: every new user who onboards via Face ID will need scoped, revocable delegation for dApps, agents, and automated workflows. These are complementary layers of the same UX stack.
 
 ## Specification
 
@@ -97,7 +97,7 @@ trait ISessionKeyManager<TContractState> {
 }
 ```
 
-**Component architecture**: The reference implementation provides session key management as a reusable `SessionKeyComponent` that any account can embed — not just OpenZeppelin-based accounts. The embedding contract implements a `HasAccountOwner` trait with a single function:
+**Component architecture**: The reference implementation provides session key management as a reusable `SessionKeyComponent` that any account can embed, not just OpenZeppelin-based accounts. The embedding contract implements a `HasAccountOwner` trait with a single function:
 
 ```cairo
 pub trait HasAccountOwner<TContractState> {
@@ -109,7 +109,7 @@ This trait has **zero OpenZeppelin dependencies**. Any wallet framework (Argent,
 
 **Wallet integration pattern** (5 steps):
 1. Add `component!()` declaration for `SessionKeyComponent` (and optionally `SpendingPolicyComponent`)
-2. Implement `HasAccountOwner` — delegate `assert_only_self()` to your own owner check
+2. Implement `HasAccountOwner`: delegate `assert_only_self()` to your own owner check
 3. Call `session_key.is_session_allowed_for_calls()` in `__validate__`
 4. Call `session_key.consume_session_call()` after signature verification
 5. Optionally call `spending_policy.check_and_update_spending()` in `__execute__`
@@ -117,8 +117,8 @@ This trait has **zero OpenZeppelin dependencies**. Any wallet framework (Argent,
 This design makes session keys a **reusable building block** rather than a monolithic contract that other wallets must fork. The key differentiator is that session key functionality is embeddable by any wallet with minimal integration effort.
 
 **Storage layout**: Implementations SHOULD use two maps:
-- `session_keys: Map<felt252, SessionData>` — session public key to session data
-- `session_entrypoints: Map<(felt252, u32), felt252>` — (session public key, index) to allowed selector
+- `session_keys: Map<felt252, SessionData>`: session public key to session data
+- `session_entrypoints: Map<(felt252, u32), felt252>`: (session public key, index) to allowed selector
 
 The `allowed_entrypoints_len` field in `SessionData` indicates how many entries exist in the entrypoints map for this session. A value of `0` means the session has no whitelist restriction (all non-admin selectors are allowed).
 
@@ -144,7 +144,7 @@ Standard ECDSA signature verified against the account's public key. Grants full 
 | 2 | `s` | `felt252` | ECDSA signature s component |
 | 3 | `valid_until` | `felt252` | Expiration timestamp; MUST be safely convertible to `u64` |
 
-The `valid_until` field is a `felt252` that MUST be converted to `u64` using `try_into()` with pattern matching. Implementations MUST NOT use `unwrap()` — if the conversion fails (value exceeds `u64::MAX`), the validation MUST return `0` (invalid) rather than panicking.
+The `valid_until` field is a `felt252` that MUST be converted to `u64` using `try_into()` with pattern matching. Implementations MUST NOT use `unwrap()`. If the conversion fails (value exceeds `u64::MAX`), the validation MUST return `0` (invalid) rather than panicking.
 
 ```cairo
 let valid_until: u64 = match (*signature.at(3)).try_into() {
@@ -199,7 +199,7 @@ selector!("remove_spending_policy")     // Prevents session key from removing sp
 
 **Rationale for `set_spending_policy`/`remove_spending_policy`**: If the Spending Policy Extension (Part H) is implemented, session keys MUST NOT be able to modify or remove their own spending limits. Without this blocklist entry, a session key could call `set_spending_policy` to raise its own caps or `remove_spending_policy` to eliminate them entirely, defeating the purpose of spending restrictions.
 
-**Rationale for `__execute__`**: A session key that can call `__execute__` directly can pass arbitrary nested calls. Since `__execute__` checks that the caller is `0` (sequencer) or `self` (the account), and the account calling its own `__execute__` satisfies this check, the nested calls would execute with full account privileges — bypassing all session restrictions. This was identified as a High severity finding by Nethermind's AuditAgent in February 2026.
+**Rationale for `__execute__`**: A session key that can call `__execute__` directly can pass arbitrary nested calls. Since `__execute__` checks that the caller is `0` (sequencer) or `self` (the account), and the account calling its own `__execute__` satisfies this check, the nested calls would execute with full account privileges, bypassing all session restrictions. This was identified as a High severity finding by Nethermind's AuditAgent in February 2026.
 
 **Rationale for `set_public_key`/`setPublicKey`**: OpenZeppelin's `AccountComponent` embeds `PublicKeyImpl` and `PublicKeyCamelImpl`, exposing owner key rotation. A session key calling these functions achieves full account takeover. Identified as a High severity finding by Nethermind's AuditAgent (scan 3).
 
@@ -207,7 +207,7 @@ selector!("remove_spending_policy")     // Prevents session key from removing sp
 
 Implementations MAY extend this blocklist with additional selectors but MUST NOT remove any of the nine listed above.
 
-**Self-call block (RECOMMENDED)**: In addition to the blocklist, implementations SHOULD block ALL calls where `call.to == get_contract_address()` when `allowed_entrypoints_len == 0` (empty whitelist). This eliminates the entire class of privilege escalation via self-calls, protecting against any future OZ embedded impl or upgrade exposing new privileged selectors. The denylist approach is inherently fragile — each of three Nethermind AuditAgent scans found selectors not in the blocklist. The self-call block converts this from an open-ended problem to a closed one.
+**Self-call block (RECOMMENDED)**: In addition to the blocklist, implementations SHOULD block ALL calls where `call.to == get_contract_address()` when `allowed_entrypoints_len == 0` (empty whitelist). This eliminates the entire class of privilege escalation via self-calls, protecting against any future OZ embedded impl or upgrade exposing new privileged selectors. The denylist approach is inherently fragile: each of three Nethermind AuditAgent scans found selectors not in the blocklist. The self-call block converts this from an open-ended problem to a closed one.
 
 ### Part E: Stale Entrypoint Cleanup
 
@@ -385,9 +385,9 @@ trait ISessionSpendingPolicy<TContractState> {
 ```
 
 **Tracked selectors**: Implementations SHOULD track the following ERC-20 selectors as spending operations:
-- `transfer` — direct token transfer
-- `approve` — token approval
-- `increase_allowance` / `increaseAllowance` — allowance increase (snake_case and camelCase)
+- `transfer`: direct token transfer
+- `approve`: token approval
+- `increase_allowance` / `increaseAllowance`: allowance increase (snake_case and camelCase)
 
 **Enforcement**: Spending checks MUST occur in `__execute__` (not `__validate__`), because spending state mutations in `__validate__` would be reverted on execution failure. For each call with a tracked selector:
 1. Extract `u256` amount from calldata positions `[1]` (low) and `[2]` (high)
@@ -412,7 +412,7 @@ Implementations are free to layer additional off-chain checks on top of the on-c
 
 ### Blocklist vs Allowlist-Only
 
-The admin selector blocklist (Part D) provides defense-in-depth even when the allowlist is empty. An empty `allowed_entrypoints` array means "allow all non-admin selectors" — but admin functions are always blocked. Without the blocklist, a session key with an empty whitelist could call `upgrade()` and replace the contract code.
+The admin selector blocklist (Part D) provides defense-in-depth even when the allowlist is empty. An empty `allowed_entrypoints` array means "allow all non-admin selectors", but admin functions are always blocked. Without the blocklist, a session key with an empty whitelist could call `upgrade()` and replace the contract code.
 
 ### Non-Atomic Multicall
 
@@ -424,7 +424,7 @@ The hash format (Part F.4) uses `u128` for timestamp fields, matching OpenZeppel
 
 ### `__execute__` in the Blocklist
 
-Blocking `__execute__` for session keys prevents nested execution privilege escalation. Without this, a session key could call the account's `__execute__` function directly, which would then execute arbitrary calls as if they came from the account itself — bypassing all session restrictions. This was identified as a High severity vulnerability by Nethermind's AuditAgent in February 2026.
+Blocking `__execute__` for session keys prevents nested execution privilege escalation. Without this, a session key could call the account's `__execute__` function directly, which would then execute arbitrary calls as if they came from the account itself, bypassing all session restrictions. This was identified as a High severity vulnerability by Nethermind's AuditAgent in February 2026.
 
 ### Call Consumption After Validation
 
@@ -439,13 +439,13 @@ Session keys are a natural fit for autonomous AI agents that need restricted on-
 - Immediate revocability (emergency kill switch)
 - Non-custodial delegation (agent never holds the owner key)
 
-This maps directly to the `SessionData` structure defined in Part A. A standard session key interface enables any compliant agent framework to work with any compliant wallet — without custom integration per wallet vendor.
+This maps directly to the `SessionData` structure defined in Part A. A standard session key interface enables any compliant agent framework to work with any compliant wallet, without custom integration per wallet vendor.
 
 ### Passkey Compatibility
 
-This SNIP is independent of the owner's authentication method. The `ISessionKeyManager` interface defines how session keys are created, validated, and revoked — not how the owner proves identity. An account that uses passkeys (secp256r1/WebAuthn) for owner authentication can implement `ISessionKeyManager` without modification: the owner calls `add_or_update_session_key` using their passkey signature, and the session key itself uses standard Stark-curve ECDSA for lightweight, programmatic signing by dApps and agents.
+This SNIP is independent of the owner's authentication method. The `ISessionKeyManager` interface defines how session keys are created, validated, and revoked, not how the owner proves identity. An account that uses passkeys (secp256r1/WebAuthn) for owner authentication can implement `ISessionKeyManager` without modification: the owner calls `add_or_update_session_key` using their passkey signature, and the session key itself uses standard Stark-curve ECDSA for lightweight, programmatic signing by dApps and agents.
 
-This separation is deliberate. As the [SNIP-6 discussion](https://community.starknet.io/t/snip-starknet-standard-account/95665) evolves toward `Array<felt252>` signatures to accommodate passkeys and other authentication methods, the 4-element session signature format defined here remains compatible — it is already an array of `felt252` values.
+This separation is deliberate. As the [SNIP-6 discussion](https://community.starknet.io/t/snip-starknet-standard-account/95665) evolves toward `Array<felt252>` signatures to accommodate passkeys and other authentication methods, the 4-element session signature format defined here remains compatible. It is already an array of `felt252` values.
 
 ## Security Considerations
 
@@ -462,31 +462,31 @@ Each audit discovered new selectors exposed by OZ embedded implementations. The 
 
 The reference implementation has been scanned four times by Nethermind's AuditAgent (AI-powered auditing tool):
 
-**Audit 1 (January 2026)** — 10 findings:
-- Finding #1 (High): Unrestricted `__execute__` caller — defense-in-depth caller check added
-- Finding #2 (High): Session whitelist not enforced in `is_valid_signature` — fixed
-- Finding #3 (High): Call-limit bypass via `calls_used` reset — fixed via admin blocklist
-- Finding #4 (High): Session whitelist not enforced in `execute_from_outside_v2` — fixed
-- Finding #5 (High): Session keys as ERC-1271 signers — accepted tradeoff (no call context in `is_valid_signature`)
-- Finding #6 (Medium): State modification in `is_valid_signature` — false positive (`@ContractState` is read-only)
-- Finding #7 (Medium): Non-atomic multicall — by design
-- Finding #8 (Low): Session can revoke sessions — fixed via admin blocklist
-- Finding #9 (Best Practice): DoS via unsafe `unwrap()` — fixed with safe `try_into()` pattern
-- Finding #10 (Best Practice): Stale entrypoints on update — fixed with pre-write cleanup
+**Audit 1 (January 2026)**, 10 findings:
+- Finding #1 (High): Unrestricted `__execute__` caller. Defense-in-depth caller check added.
+- Finding #2 (High): Session whitelist not enforced in `is_valid_signature`. Fixed.
+- Finding #3 (High): Call-limit bypass via `calls_used` reset. Fixed via admin blocklist.
+- Finding #4 (High): Session whitelist not enforced in `execute_from_outside_v2`. Fixed.
+- Finding #5 (High): Session keys as ERC-1271 signers. Accepted tradeoff (no call context in `is_valid_signature`).
+- Finding #6 (Medium): State modification in `is_valid_signature`. False positive (`@ContractState` is read-only).
+- Finding #7 (Medium): Non-atomic multicall. By design.
+- Finding #8 (Low): Session can revoke sessions. Fixed via admin blocklist.
+- Finding #9 (Best Practice): DoS via unsafe `unwrap()`. Fixed with safe `try_into()` pattern.
+- Finding #10 (Best Practice): Stale entrypoints on update. Fixed with pre-write cleanup.
 
-**Audit 2 (February 2026)** — 3 findings:
-- Finding #1 (High): Nested `__execute__` privilege escalation — fixed by adding `__execute__` to admin blocklist
-- Finding #2 (Medium): Session hash does not bind full tx envelope — accepted risk for paymaster compatibility
-- Finding #3 (Low): Call consumed before validation in SNIP-9 path — fixed
+**Audit 2 (February 2026)**, 3 findings:
+- Finding #1 (High): Nested `__execute__` privilege escalation. Fixed by adding `__execute__` to admin blocklist.
+- Finding #2 (Medium): Session hash does not bind full tx envelope. Accepted risk for paymaster compatibility.
+- Finding #3 (Low): Call consumed before validation in SNIP-9 path. Fixed.
 
-**Audit 3 (February 2026)** — 5 findings:
-- Finding #1 (High): `set_public_key`/`setPublicKey` not in blocklist — fixed (blocklist + self-call block)
-- Finding #2 (High): Duplicate of #1 — same fix
-- Finding #3 (Low): Nested `execute_from_outside_v2` double-consumption — fixed (blocklist + self-call block)
-- Finding #4 (Low): Missing SRC-5 interface registration — fixed
-- Finding #5 (Info): Malleable `valid_until` in SNIP-9 path — fixed (bind to stored session)
+**Audit 3 (February 2026)**, 5 findings:
+- Finding #1 (High): `set_public_key`/`setPublicKey` not in blocklist. Fixed (blocklist + self-call block).
+- Finding #2 (High): Duplicate of #1. Same fix.
+- Finding #3 (Low): Nested `execute_from_outside_v2` double-consumption. Fixed (blocklist + self-call block).
+- Finding #4 (Low): Missing SRC-5 interface registration. Fixed.
+- Finding #5 (Info): Malleable `valid_until` in SNIP-9 path. Fixed (bind to stored session).
 
-**Audit 4 (February 2026)** — 0 findings:
+**Audit 4 (February 2026)**, 0 findings:
 - Clean bill of health. The self-call block and expanded blocklist eliminated the systemic vulnerability class.
 
 ### Session Hash Does Not Bind Full Transaction Envelope
@@ -505,7 +505,7 @@ Using `try_into().unwrap()` for the `felt252` → `u64` conversion of `valid_unt
 
 ### `is_valid_signature` and Call Context
 
-`is_valid_signature(hash, signature)` receives no call context — it cannot enforce selector whitelists. This is an inherent limitation of the ERC-1271 interface. Compliant accounts MUST enforce whitelists in `__validate__` and `execute_from_outside_v2` where calls are available. The `is_valid_signature` function SHOULD still validate session existence, expiration, and call limits.
+`is_valid_signature(hash, signature)` receives no call context. It cannot enforce selector whitelists. This is an inherent limitation of the ERC-1271 interface. Compliant accounts MUST enforce whitelists in `__validate__` and `execute_from_outside_v2` where calls are available. The `is_valid_signature` function SHOULD still validate session existence, expiration, and call limits.
 
 `is_valid_signature` MUST be read-only (`@ContractState`) and MUST NOT increment `calls_used`.
 
@@ -533,7 +533,7 @@ The `ISessionSpendingPolicy` extension (Part H) provides optional per-token spen
 - **Production class hash**: `0x0484bbd2404b3c7264bea271f7267d6d4004821ac7787a9eed7f472e79ef40d1` (v33)
 - **Network**: Starknet Mainnet
 - **Tests**: 65 passing (21 session validation + 22 audit regression + 3 SNIP-9 compatibility + 19 spending policy)
-- **Auditor**: Nethermind AuditAgent (AI-powered, January 2026, February 2026 — 4 scans, final: 0 findings)
+- **Auditor**: Nethermind AuditAgent (AI-powered, January 2026, February 2026, 4 scans, final: 0 findings)
 - **Dependencies**: OpenZeppelin Cairo Contracts v3.0.0, Starknet 2.14.0
 
 ### Reference Interface Definitions
@@ -605,19 +605,19 @@ function validate(calls, signature):
 
 This proposal builds on prior work across the Starknet ecosystem:
 
-- **Bibliotheca DAO** — First session key implementation on Starknet (Arcade Accounts), pioneered by Chris Lexmond and Loaf, proving the concept before anyone else
-- **Argent Labs / Ready** — Guardian model for session delegation, SNIP-9 co-authorship
-- **Braavos** — Open-source session keys library, SNIP-9 co-authorship (delaaxe)
-- **Cartridge** — Passkey infrastructure and gaming session validation (Controller, Flippy Flop at 127 TPS)
-- **AVNU** — SNIP-29 paymaster standard, SNIP-9 co-authorship, open-source paymaster reference implementation
-- **OpenZeppelin** — Cairo Contracts component architecture (`AccountComponent`, `SRC5Component`, `SRC9Component`) that makes session key extensions possible
-- **Nethermind** — Four AuditAgent scans that identified critical vulnerabilities and shaped the admin blocklist, self-call block, and validation ordering. A human-led audit is a logical next step as the standard matures.
-- **Medialane** — Tested every class hash from v25 through v33 on mainnet and provided consistent feedback on integration issues
-- **Starknet Foundation** — Seed grant that funded development from day one, and ongoing guidance throughout the process. This work would not exist without their support.
-- **EthSign** — Forum proposal for function call delegation (October 2024)
-- **keep-starknet-strange / Omar Espejel** — Proposed `ISessionSpendingPolicy` ([Issue #5](https://github.com/chipi-pay/sessions-smart-contract/issues/5)), collaborated on spending policy design informed by starknet-agentic's working implementation
+- **Bibliotheca DAO**: First session key implementation on Starknet (Arcade Accounts), pioneered by Chris Lexmond and Loaf, proving the concept before anyone else
+- **Argent Labs / Ready**: Guardian model for session delegation, SNIP-9 co-authorship
+- **Braavos**: Open-source session keys library, SNIP-9 co-authorship (delaaxe)
+- **Cartridge**: Passkey infrastructure and gaming session validation (Controller, Flippy Flop at 127 TPS)
+- **AVNU**: SNIP-29 paymaster standard, SNIP-9 co-authorship, open-source paymaster reference implementation
+- **OpenZeppelin**: Cairo Contracts component architecture (`AccountComponent`, `SRC5Component`, `SRC9Component`) that makes session key extensions possible
+- **Nethermind**: Four AuditAgent scans that identified critical vulnerabilities and shaped the admin blocklist, self-call block, and validation ordering. A human-led audit is a logical next step as the standard matures.
+- **Medialane**: Tested every class hash from v25 through v33 on mainnet and provided consistent feedback on integration issues
+- **Starknet Foundation**: Seed grant that funded development from day one, and ongoing guidance throughout the process. This work would not exist without their support.
+- **EthSign**: Forum proposal for function call delegation (October 2024)
+- **keep-starknet-strange / Omar Espejel**: Proposed `ISessionSpendingPolicy` ([Issue #5](https://github.com/chipi-pay/sessions-smart-contract/issues/5)), collaborated on spending policy design informed by starknet-agentic's working implementation
 
-The fragmentation that motivates this standard is not a failure — it is the natural result of teams independently solving the same problem well. This SNIP aims to provide a coordination layer, not to replace any existing approach.
+The fragmentation that motivates this standard is not a failure. It is the natural result of teams independently solving the same problem well. This SNIP aims to provide a coordination layer, not to replace any existing approach.
 
 ## Copyright
 

@@ -61,5 +61,6 @@ src/forwarder.cairo
 whitelist-relayers.sh
 tests/test_forwarder*.cairo
 
-# Forum posts (draft, not for repo)
+# Forum/social posts (drafts, not for repo)
 FORUM_POSTS.txt
+social_posts.md
